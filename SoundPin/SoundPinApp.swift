@@ -202,7 +202,8 @@ class AudioManager: ObservableObject {
     }
 
     func refreshDevices() {
-        let allConnectedDevices = deviceService.getDevices()
+        // When the system's list cannot be read, what is shown stays as it is
+        guard let allConnectedDevices = deviceService.getDevices() else { return }
         connectedDeviceUIDs = Set(allConnectedDevices.map { $0.uid })
         priorityManager.rememberDevices(allConnectedDevices)
         let connectedInputs = allConnectedDevices.filter { $0.type == .input }
