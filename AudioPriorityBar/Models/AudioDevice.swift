@@ -19,8 +19,8 @@ enum OutputCategory: String, Codable, CaseIterable {
 
     var label: String {
         switch self {
-        case .speaker: return "扬声器"
-        case .headphone: return "耳机"
+        case .speaker: return L10n.speakers
+        case .headphone: return L10n.headphones
         }
     }
 }

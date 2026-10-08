@@ -1,6 +1,6 @@
 #!/bin/bash
 # Renders the panel to a PNG without opening it, for checking layout changes.
-#   tools/render-preview.sh [output.png] [--manual-look] [--edit-look] [--demo]
+#   tools/render-preview.sh [output.png] [--manual-look] [--edit-look] [--demo] [--lang en|zh-Hans]
 #
 # Does not change the audio devices: the preview process reads a copy of the
 # app's settings with automatic switching turned off.

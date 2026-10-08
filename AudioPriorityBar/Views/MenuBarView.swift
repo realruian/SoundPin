@@ -3,6 +3,9 @@ import CoreAudio
 import AppKit
 
 // Laid out after the macOS Sound menu: title, volume slider, device rows with round icons.
+// Text uses the system's built-in styles, matching the system menus: the title is Body
+// emphasized (13 pt semibold), group names are Callout emphasized (12 pt semibold), and
+// device names are Body (13 pt regular).
 struct MenuBarView: View {
     @EnvironmentObject var audioManager: AudioManager
     @State private var deviceListHeight: CGFloat = 0
@@ -15,8 +18,8 @@ struct MenuBarView: View {
 
             VolumeSliderView()
                 .padding(.horizontal, 14)
-                .padding(.top, 8)
-                .padding(.bottom, 12)
+                .padding(.top, 6.5)
+                .padding(.bottom, 9.5)
 
             PanelDivider()
 
@@ -25,7 +28,7 @@ struct MenuBarView: View {
                     // Headphones are listed only when there are some (or while editing)
                     if !audioManager.headphoneDevices.isEmpty || audioManager.isEditMode {
                         DeviceSectionView(
-                            title: "耳机",
+                            title: L10n.headphones,
                             devices: audioManager.headphoneDevices,
                             currentDeviceId: audioManager.currentOutputId,
                             onMove: audioManager.moveHeadphoneDevice,
@@ -43,7 +46,7 @@ struct MenuBarView: View {
                     }
 
                     DeviceSectionView(
-                        title: "扬声器",
+                        title: L10n.speakers,
                         devices: audioManager.speakerDevices,
                         currentDeviceId: audioManager.currentOutputId,
                         onMove: audioManager.moveSpeakerDevice,
@@ -60,10 +63,11 @@ struct MenuBarView: View {
                     )
 
                     PanelDivider()
-                        .padding(.vertical, 6)
+                        .padding(.top, 5)
+                        .padding(.bottom, 4)
 
                     DeviceSectionView(
-                        title: "麦克风",
+                        title: L10n.microphones,
                         devices: audioManager.inputDevices,
                         currentDeviceId: audioManager.currentInputId,
                         onMove: audioManager.moveInputDevice,
@@ -78,7 +82,8 @@ struct MenuBarView: View {
                         HiddenDevicesToggleView()
                     }
                 }
-                .padding(.vertical, 4)
+                .padding(.top, 4)
+                .padding(.bottom, 5)
                 .background(GeometryReader { proxy in
                     Color.clear.preference(key: DeviceListHeightKey.self, value: proxy.size.height)
                 })
@@ -89,21 +94,94 @@ struct MenuBarView: View {
 
             PanelDivider()
 
-            PanelMenuRow(title: "声音设置…") {
+            PanelMenuRow(title: L10n.soundSettings) {
                 if let url = URL(string: "x-apple.systempreferences:com.apple.Sound-Settings.extension") {
                     NSWorkspace.shared.open(url)
                 }
             }
-            .padding(.vertical, 5)
+            .padding(.top, 2)
+            .padding(.bottom, 4.5)
         }
-        .frame(width: 320)
+        .frame(width: 308)
+        .background(PanelPositioner())
     }
+}
+
+extension Color {
+    /// Black in light mode and white in dark mode, at a fixed opacity. In the menu bar
+    /// panel SwiftUI's default text style draws pure black and NSColor.labelColor draws
+    /// too light, so the panel's tones are measured off the system menus and set outright.
+    private static func tone(_ opacity: CGFloat) -> Color {
+        Color(nsColor: NSColor(name: nil) { appearance in
+            let dark = appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+            return NSColor(white: dark ? 1 : 0, alpha: opacity)
+        })
+    }
+
+    /// Titles, device names and the settings row
+    static let panelLabel = tone(0.855)
+    /// The speaker glyphs at the ends of the volume slider
+    static let panelGlyph = tone(0.515)
+    /// The device glyph inside a circle that is not selected
+    static let panelIcon = tone(0.44)
 }
 
 private struct DeviceListHeightKey: PreferenceKey {
     static var defaultValue: CGFloat = 0
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
         value = max(value, nextValue())
+    }
+}
+
+/// Moves the panel up to sit as close under the menu bar as the system's own panels do.
+/// MenuBarExtra leaves 3.5 pt there; the system's Sound and Wi-Fi panels leave 0.5 pt.
+private struct PanelPositioner: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSView {
+        PositionerView()
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {}
+
+    final class PositionerView: NSView {
+        private let gap: CGFloat = 0.5
+        private var observers: [NSObjectProtocol] = []
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            stopObserving()
+            guard let window else { return }
+            let names = [
+                NSWindow.didMoveNotification,
+                NSWindow.didResizeNotification,
+                NSWindow.didBecomeKeyNotification,
+                NSWindow.didChangeOcclusionStateNotification,
+            ]
+            for name in names {
+                observers.append(NotificationCenter.default.addObserver(forName: name, object: window, queue: .main) { [weak self] _ in
+                    self?.reposition()
+                })
+            }
+            reposition()
+        }
+
+        private func reposition() {
+            guard let window, let screen = window.screen else { return }
+            let menuBarBottom = screen.visibleFrame.maxY
+            // Only when there is a menu bar above and the panel hangs just below it
+            guard menuBarBottom < screen.frame.maxY else { return }
+            let distance = menuBarBottom - window.frame.maxY
+            guard distance > gap + 0.25, distance < 12 else { return }
+            window.setFrameOrigin(NSPoint(x: window.frame.minX, y: menuBarBottom - gap - window.frame.height))
+        }
+
+        private func stopObserving() {
+            observers.forEach(NotificationCenter.default.removeObserver)
+            observers = []
+        }
+
+        deinit {
+            stopObserving()
+        }
     }
 }
 
@@ -121,8 +199,9 @@ struct PanelHeaderView: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            Text("声音")
-                .font(.system(size: 13, weight: .bold))
+            Text(L10n.sound)
+                .font(.body.weight(.semibold))
+                .foregroundColor(.panelLabel)
 
             if audioManager.isCustomMode {
                 Button {
@@ -131,7 +210,7 @@ struct PanelHeaderView: View {
                     HStack(spacing: 3) {
                         Image(systemName: "hand.raised.fill")
                             .font(.system(size: 9))
-                        Text("自动切换已暂停")
+                        Text(L10n.autoSwitchPaused)
                             .font(.system(size: 10, weight: .medium))
                     }
                     .foregroundColor(.white)
@@ -140,7 +219,7 @@ struct PanelHeaderView: View {
                     .background(Capsule().fill(Color.orange))
                 }
                 .buttonStyle(.plain)
-                .help("点击恢复自动切换")
+                .help(L10n.resumeAutoSwitchHelp)
             }
 
             Spacer()
@@ -149,24 +228,30 @@ struct PanelHeaderView: View {
                 Button {
                     audioManager.toggleEditMode()
                 } label: {
-                    Text("完成")
-                        .font(.system(size: 13, weight: .medium))
+                    Text(L10n.done)
+                        .font(.body.weight(.medium))
                         .foregroundColor(.accentColor)
                 }
                 .buttonStyle(.plain)
             } else {
                 Menu {
-                    Toggle("自动切换设备", isOn: Binding(
+                    Toggle(L10n.autoSwitch, isOn: Binding(
                         get: { !audioManager.isCustomMode },
                         set: { audioManager.setCustomMode(!$0) }
                     ))
-                    Toggle("开机启动", isOn: $launchManager.isEnabled)
+                    Toggle(L10n.openAtLogin, isOn: $launchManager.isEnabled)
                     Divider()
-                    Button("编辑设备列表") {
+                    Button(L10n.editDeviceList) {
                         audioManager.toggleEditMode()
                     }
+                    Picker(L10n.language, selection: $audioManager.language) {
+                        Text(L10n.systemDefault).tag(AppLanguage.system)
+                        // Each language is listed under its own name
+                        Text("English").tag(AppLanguage.english)
+                        Text("简体中文").tag(AppLanguage.chinese)
+                    }
                     Divider()
-                    Button("退出") {
+                    Button(L10n.quit) {
                         NSApplication.shared.terminate(nil)
                     }
                 } label: {
@@ -190,7 +275,7 @@ struct VolumeSliderView: View {
         HStack(spacing: 8) {
             Image(systemName: "speaker.fill")
                 .font(.system(size: 16))
-                .foregroundColor(.secondary)
+                .foregroundColor(.panelGlyph)
 
             Slider(
                 value: Binding(
@@ -202,7 +287,7 @@ struct VolumeSliderView: View {
 
             Image(systemName: "speaker.wave.3.fill")
                 .font(.system(size: 16))
-                .foregroundColor(.secondary)
+                .foregroundColor(.panelGlyph)
         }
         .onScrollWheel { delta in
             let newVolume = audioManager.volume + Float(delta * 0.02)
@@ -262,16 +347,16 @@ struct DeviceSectionView: View {
     var showCategoryPicker: Bool = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: 3.5) {
             Text(title)
-                .font(.system(size: 12, weight: .semibold))
+                .font(.callout.weight(.semibold))
                 .foregroundColor(.secondary)
                 .padding(.horizontal, 14)
-                .padding(.top, 6)
+                .padding(.top, 4.5)
 
             if devices.isEmpty {
-                Text("没有设备")
-                    .font(.system(size: 13))
+                Text(L10n.noDevices)
+                    .font(.body)
                     .foregroundColor(.secondary.opacity(0.7))
                     .padding(.horizontal, 14)
                     .padding(.vertical, 6)
@@ -289,7 +374,6 @@ struct DeviceSectionView: View {
                 .padding(.horizontal, 6)
             }
         }
-        .padding(.bottom, 2)
     }
 }
 
@@ -302,7 +386,8 @@ struct PanelMenuRow: View {
     var body: some View {
         Button(action: action) {
             Text(title)
-                .font(.system(size: 13))
+                .font(.body)
+                .foregroundColor(.panelLabel)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, 8)
                 .frame(height: 26)
@@ -341,8 +426,8 @@ struct HiddenDevicesToggleView: View {
                         .rotationEffect(.degrees(isExpanded ? 90 : 0))
                     Image(systemName: "eye.slash")
                         .font(.system(size: 11))
-                    Text("已忽略 \(allHiddenDevices.count) 个")
-                        .font(.system(size: 12))
+                    Text(L10n.ignoredCount(allHiddenDevices.count))
+                        .font(.callout)
                 }
                 .foregroundColor(.secondary)
                 .padding(.horizontal, 14)
@@ -376,7 +461,7 @@ struct HiddenDeviceRow: View {
                 .frame(width: 18)
 
             Text(device.name)
-                .font(.system(size: 13))
+                .font(.body)
                 .foregroundColor(.secondary)
                 .lineLimit(1)
                 .truncationMode(.tail)
@@ -392,7 +477,7 @@ struct HiddenDeviceRow: View {
                         .foregroundColor(.secondary)
                 }
                 .buttonStyle(.plain)
-                .help("取消忽略")
+                .help(L10n.stopIgnoring)
                 .transition(.opacity.combined(with: .scale(scale: 0.8)))
             }
         }

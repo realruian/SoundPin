@@ -7,7 +7,7 @@ import CoreAudio
 // gives this process its own copy of the settings with automatic switching off,
 // so creating AudioManager here applies nothing to the audio devices.
 //
-//   apbpreview <output.png> [--manual-look] [--edit-look] [--demo]
+//   apbpreview <output.png> [--manual-look] [--edit-look] [--demo] [--lang en|zh-Hans]
 //
 // --demo swaps this Mac's devices for a sample set and frames the panel, for a
 // screenshot that can be published.
@@ -22,6 +22,9 @@ import CoreAudio
         // render would pick the same devices the real app picks.
         if !CommandLine.arguments.contains("--manual-look") { manager.isCustomMode = false }
         if CommandLine.arguments.contains("--edit-look") { manager.toggleEditMode() }
+        if let flag = CommandLine.arguments.firstIndex(of: "--lang"), flag + 1 < CommandLine.arguments.count {
+            manager.language = AppLanguage(rawValue: CommandLine.arguments[flag + 1]) ?? .system
+        }
 
         let demo = CommandLine.arguments.contains("--demo")
         if demo {
@@ -59,7 +62,7 @@ import CoreAudio
                 .padding(28))
             : AnyView(panel)
         let host = NSHostingView(rootView: root)
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 320, height: 700), styleMask: [.borderless], backing: .buffered, defer: false)
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 308, height: 700), styleMask: [.borderless], backing: .buffered, defer: false)
         window.isOpaque = false
         window.backgroundColor = .clear
         window.contentView = host

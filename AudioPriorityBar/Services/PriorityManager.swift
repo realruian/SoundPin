@@ -12,22 +12,22 @@ struct StoredDevice: Codable, Equatable {
         let interval = now.timeIntervalSince(lastSeen)
 
         if interval < 60 {
-            return "刚刚"
+            return L10n.justNow
         } else if interval < 3600 {
             let mins = Int(interval / 60)
-            return "\(mins) 分钟前"
+            return L10n.minutesAgo(mins)
         } else if interval < 86400 {
             let hours = Int(interval / 3600)
-            return "\(hours) 小时前"
+            return L10n.hoursAgo(hours)
         } else if interval < 604800 {
             let days = Int(interval / 86400)
-            return "\(days) 天前"
+            return L10n.daysAgo(days)
         } else if interval < 2592000 {
             let weeks = Int(interval / 604800)
-            return "\(weeks) 周前"
+            return L10n.weeksAgo(weeks)
         } else {
             let months = Int(interval / 2592000)
-            return "\(months) 个月前"
+            return L10n.monthsAgo(months)
         }
     }
 }

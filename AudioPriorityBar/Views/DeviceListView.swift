@@ -164,23 +164,23 @@ struct DraggableDeviceRow: View {
     }
 
     var body: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 8) {
             // Round device icon, filled with the accent color for the device in use
             ZStack {
                 Circle()
                     .fill(isActive ? Color.accentColor : Color.primary.opacity(0.1))
                 Image(systemName: DeviceGlyph.symbol(for: device, category: category))
                     .font(.system(size: 12, weight: .medium))
-                    .foregroundColor(isActive ? .white : .primary.opacity(0.75))
+                    .foregroundColor(isActive ? .white : .panelIcon)
             }
             .frame(width: 26, height: 26)
 
             Text(device.name)
-                .font(.system(size: 13, weight: .regular))
+                .font(.body)
                 .strikethrough(isNeverUse, color: .secondary)
                 .lineLimit(1)
                 .truncationMode(.tail)
-                .foregroundColor(isGrayed || isNeverUse ? .secondary : .primary)
+                .foregroundColor(isGrayed || isNeverUse ? .secondary : .panelLabel)
 
             if let icon = statusIcon {
                 Image(systemName: icon)
@@ -198,7 +198,7 @@ struct DraggableDeviceRow: View {
                 Image(systemName: device.type == .input ? "mic.slash.fill" : "speaker.slash.fill")
                     .font(.system(size: 10))
                     .foregroundColor(.secondary)
-                    .help("已静音")
+                    .help(L10n.muted)
             }
 
             Spacer(minLength: 4)
@@ -219,12 +219,12 @@ struct DraggableDeviceRow: View {
                         Button {
                             audioManager.setCategory(.speaker, for: device)
                         } label: {
-                            Label("移到扬声器", systemImage: "speaker.wave.2.fill")
+                            Label(L10n.moveToSpeakers, systemImage: "speaker.wave.2.fill")
                         }
                         Button {
                             audioManager.setCategory(.headphone, for: device)
                         } label: {
-                            Label("移到耳机", systemImage: "headphones")
+                            Label(L10n.moveToHeadphones, systemImage: "headphones")
                         }
                         Divider()
                     }
@@ -233,23 +233,21 @@ struct DraggableDeviceRow: View {
                         Button {
                             audioManager.unhideDevice(device)
                         } label: {
-                            Label("取消忽略", systemImage: "eye")
+                            Label(L10n.stopIgnoring, systemImage: "eye")
                         }
                     } else {
                         if let onHide {
                             Button {
                                 onHide(device)
                             } label: {
-                                let categoryLabel = device.type == .input ? "麦克风" :
-                                    (category == .headphone ? "耳机" : "扬声器")
-                                Label("在\(categoryLabel)列表中忽略", systemImage: "eye.slash")
+                                Label(L10n.ignore(in: device.type, category: category), systemImage: "eye.slash")
                             }
 
                             if device.type == .output {
                                 Button {
                                     audioManager.hideDeviceEntirely(device)
                                 } label: {
-                                    Label("完全忽略", systemImage: "eye.slash.fill")
+                                    Label(L10n.ignoreEntirely, systemImage: "eye.slash.fill")
                                 }
                             }
                         }
@@ -261,7 +259,7 @@ struct DraggableDeviceRow: View {
                             audioManager.priorityManager.forgetDevice(device.uid)
                             audioManager.refreshDevices()
                         } label: {
-                            Label("忘记此设备", systemImage: "trash")
+                            Label(L10n.forgetDevice, systemImage: "trash")
                         }
                     }
 
@@ -271,9 +269,9 @@ struct DraggableDeviceRow: View {
                             audioManager.setNeverUse(device, neverUse: !audioManager.isNeverUse(device))
                         } label: {
                             if audioManager.isNeverUse(device) {
-                                Label("恢复自动选用", systemImage: "checkmark.circle")
+                                Label(L10n.allowAutoSelect, systemImage: "checkmark.circle")
                             } else {
-                                Label("永不自动选用", systemImage: "nosign")
+                                Label(L10n.neverAutoSelect, systemImage: "nosign")
                             }
                         }
                     }

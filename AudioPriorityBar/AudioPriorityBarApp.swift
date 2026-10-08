@@ -88,6 +88,10 @@ class AudioManager: ObservableObject {
     @Published var isActiveOutputMuted: Bool = false
     @Published var isActiveInputMuted: Bool = false
     @Published var micFlashState: Bool = false
+    /// Published so that every view redraws its text when the language changes
+    @Published var language: AppLanguage = L10n.setting {
+        didSet { L10n.setting = language }
+    }
 
     private let deviceService = AudioDeviceService()
     private var micFlashTimer: Timer?
