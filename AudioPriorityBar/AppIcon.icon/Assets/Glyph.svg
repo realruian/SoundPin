@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <!-- Speaker: a box and a cone, corners rounded by the stroke -->
+  <path d="M230 442 L310 442 L440 322 L440 702 L310 582 L230 582 Z" fill="#000" stroke="#000" stroke-width="44" stroke-linejoin="round"/>
+  <!-- Three rising bars: the priority order -->
+  <rect x="512" y="562" width="72" height="162" rx="36" fill="#000"/>
+  <rect x="628" y="442" width="72" height="282" rx="36" fill="#000"/>
+  <rect x="744" y="300" width="72" height="424" rx="36" fill="#000"/>
+</svg>
