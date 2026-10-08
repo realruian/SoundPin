@@ -41,7 +41,6 @@ class PriorityManager {
     private let deviceCategoriesKey = "deviceCategories"
     private let currentModeKey = "currentMode"
     private let customModeKey = "customMode"
-    private let hiddenDevicesKey = "hiddenDevices"
     private let knownDevicesKey = "knownDevices"
 
     // MARK: - Known Devices (Persistent Memory)
@@ -232,14 +231,52 @@ class PriorityManager {
         return sortDevices(devices, usingKey: key)
     }
 
-    func savePriorities(_ devices: [AudioDevice], type: AudioDeviceType) {
+    /// Stores the new order after `moved` changed places in `devices`, the list on screen
+    func savePriorities(_ devices: [AudioDevice], moved: [AudioDevice], type: AudioDeviceType) {
         let key = priorityKey(for: type, category: nil)
-        savePriorities(devices, key: key)
+        savePriorities(devices, moved: moved, key: key)
     }
 
-    func savePriorities(_ devices: [AudioDevice], category: OutputCategory) {
+    func savePriorities(_ devices: [AudioDevice], moved: [AudioDevice], category: OutputCategory) {
         let key = priorityKey(for: .output, category: category)
-        savePriorities(devices, key: key)
+        savePriorities(devices, moved: moved, key: key)
+    }
+
+    /// A list that has never been ordered starts with the device in use on top, so that
+    /// the app's first pick from it is the device the Mac is using already. Does nothing
+    /// once the list has an order, or while the device in use is not in it.
+    func seedPriorities(_ devices: [AudioDevice], inUse: AudioObjectID?, type: AudioDeviceType) {
+        seedPriorities(devices, inUse: inUse, key: priorityKey(for: type, category: nil))
+    }
+
+    func seedPriorities(_ devices: [AudioDevice], inUse: AudioObjectID?, category: OutputCategory) {
+        seedPriorities(devices, inUse: inUse, key: priorityKey(for: .output, category: category))
+    }
+
+    private func seedPriorities(_ devices: [AudioDevice], inUse: AudioObjectID?, key: String) {
+        guard defaults.object(forKey: key) == nil,
+              let top = devices.first(where: { $0.isConnected && $0.id == inUse }) else { return }
+        defaults.set([top.uid] + devices.map { $0.uid }.filter { $0 != top.uid }, forKey: key)
+    }
+
+    /// The stored order with `moved` put where it now sits among `shown`, the devices on
+    /// screen. That list leaves out devices that are disconnected or ignored, so it cannot
+    /// replace the stored order: those devices keep their rank, and only the moved one
+    /// changes places. A device never ranked before comes last, as it is listed.
+    static func reorder(_ stored: [String], shown: [String], moved: String) -> [String] {
+        guard let position = shown.firstIndex(of: moved) else { return stored }
+        var order: [String] = []
+        for uid in stored + shown where uid != moved && !order.contains(uid) {
+            order.append(uid)
+        }
+        if position + 1 < shown.count, let next = order.firstIndex(of: shown[position + 1]) {
+            order.insert(moved, at: next)
+        } else if position > 0, let previous = order.firstIndex(of: shown[position - 1]) {
+            order.insert(moved, at: previous + 1)
+        } else {
+            order.append(moved)
+        }
+        return order
     }
 
     // MARK: - Private Helpers
@@ -268,8 +305,13 @@ class PriorityManager {
         }
     }
 
-    private func savePriorities(_ devices: [AudioDevice], key: String) {
-        let uids = devices.map { $0.uid }
-        defaults.set(uids, forKey: key)
+    private func savePriorities(_ devices: [AudioDevice], moved: [AudioDevice], key: String) {
+        var order = defaults.array(forKey: key) as? [String] ?? []
+        let shown = devices.map { $0.uid }
+        // Last first, so that each one finds the device after it already in place
+        for device in moved.reversed() {
+            order = Self.reorder(order, shown: shown, moved: device.uid)
+        }
+        defaults.set(order, forKey: key)
     }
 }

@@ -54,6 +54,62 @@ import Foundation
         check("and keeps the other side marked", pm.isNeverUse(out))
         check("other devices' entries are untouched", (defaults.array(forKey: "neverUseDevices") as? [String])?.contains("someone-else") == true)
 
+        print("Priority order")
+        // The list on screen leaves out devices that are disconnected or ignored
+        check("a pick while the top device is away keeps that device on top",
+              PriorityManager.reorder(["desk-mic", "airpods", "built-in"], shown: ["built-in", "airpods"], moved: "built-in")
+                == ["desk-mic", "built-in", "airpods"])
+        check("moving to the end goes after the last device shown",
+              PriorityManager.reorder(["a", "away", "b", "c"], shown: ["b", "c", "a"], moved: "a") == ["away", "b", "c", "a"])
+        check("moving into the middle goes before the device now after it",
+              PriorityManager.reorder(["a", "b", "away", "c"], shown: ["b", "a", "c"], moved: "a") == ["b", "away", "a", "c"])
+        check("a device never ranked before can be moved to the top",
+              PriorityManager.reorder(["a", "away"], shown: ["new", "a"], moved: "new") == ["new", "a", "away"])
+        check("devices never ranked before come last, in the order shown",
+              PriorityManager.reorder(["a"], shown: ["a", "new1", "moved", "new2"], moved: "moved") == ["a", "new1", "moved", "new2"])
+        check("the first order to be stored is the order shown",
+              PriorityManager.reorder([], shown: ["b", "a"], moved: "b") == ["b", "a"])
+        check("a device that is not shown changes nothing",
+              PriorityManager.reorder(["a", "b"], shown: ["a", "b"], moved: "gone") == ["a", "b"])
+        check("an entry stored twice is stored once afterwards",
+              PriorityManager.reorder(["a", "b", "a"], shown: ["b", "a"], moved: "b") == ["b", "a"])
+
+        // The same through the stored settings: the desk microphone is unplugged, and the
+        // built-in one is picked, which moves it to the top of the two that are listed
+        let deskMic = AudioDevice(id: 81, uid: "desk-mic", name: "Desk Mic", type: .input)
+        let airpods = AudioDevice(id: 82, uid: "airpods", name: "AirPods", type: .input)
+        let builtIn = AudioDevice(id: 83, uid: "built-in", name: "Built-in", type: .input)
+        defaults.set(["desk-mic", "airpods", "built-in"], forKey: "inputPriorities")
+        pm.savePriorities([builtIn, airpods], moved: [builtIn], type: .input)
+        check("the stored order still holds the unplugged device",
+              (defaults.array(forKey: "inputPriorities") as? [String]) ?? [] == ["desk-mic", "built-in", "airpods"])
+        check("plugged in again, it sorts to the top",
+              pm.sortByPriority([builtIn, airpods, deskMic], type: .input).map { $0.uid } == ["desk-mic", "built-in", "airpods"])
+        pm.savePriorities([airpods, builtIn], moved: [airpods], category: .speaker)
+        check("each list has an order of its own",
+              (defaults.array(forKey: "speakerPriorities") as? [String]) ?? [] == ["airpods", "built-in"]
+                && (defaults.array(forKey: "inputPriorities") as? [String])?.first == "desk-mic")
+
+        print("A list with no order yet")
+        let monitor = AudioDevice(id: 91, uid: "monitor", name: "Monitor", type: .output)
+        let laptop = AudioDevice(id: 92, uid: "laptop", name: "Laptop Speakers", type: .output)
+        let gone = AudioDevice.disconnected(uid: "gone", name: "Gone", type: .output)
+        defaults.removeObject(forKey: "speakerPriorities")
+        defaults.removeObject(forKey: "headphonePriorities")
+        check("with no order, devices sort as the system lists them",
+              pm.sortByPriority([monitor, laptop], category: .speaker).map { $0.uid } == ["monitor", "laptop"])
+        pm.seedPriorities([monitor, laptop], inUse: 55, category: .speaker)
+        check("a device in use that is not in the list seeds nothing", defaults.object(forKey: "speakerPriorities") == nil)
+        pm.seedPriorities([gone, monitor, laptop], inUse: 0, category: .speaker)
+        check("a disconnected device is never the one in use", defaults.object(forKey: "speakerPriorities") == nil)
+        pm.seedPriorities([monitor, laptop], inUse: 92, category: .speaker)
+        check("the device in use goes on top",
+              pm.sortByPriority([monitor, laptop], category: .speaker).map { $0.uid } == ["laptop", "monitor"])
+        check("the other list is left without an order", defaults.object(forKey: "headphonePriorities") == nil)
+        pm.seedPriorities([monitor, laptop], inUse: 91, category: .speaker)
+        check("a list that has an order is not seeded again",
+              (defaults.array(forKey: "speakerPriorities") as? [String]) ?? [] == ["laptop", "monitor"])
+
         print(failures == 0 ? "\nAll checks passed." : "\n\(failures) check(s) failed.")
         exit(failures == 0 ? 0 : 1)
     }
