@@ -77,10 +77,6 @@ struct MenuBarView: View {
                         category: nil,
                         showCategoryPicker: false
                     )
-
-                    if !audioManager.isEditMode {
-                        HiddenDevicesToggleView()
-                    }
                 }
                 .padding(.top, 4)
                 .padding(.bottom, 5)
@@ -197,6 +193,12 @@ struct PanelHeaderView: View {
     @EnvironmentObject var audioManager: AudioManager
     @StateObject private var launchManager = LaunchAtLoginManager.shared
 
+    private var ignoredDevices: [AudioDevice] {
+        audioManager.hiddenHeadphoneDevices +
+        audioManager.hiddenSpeakerDevices +
+        audioManager.hiddenInputDevices
+    }
+
     var body: some View {
         HStack(spacing: 8) {
             Text(L10n.sound)
@@ -248,6 +250,20 @@ struct PanelHeaderView: View {
                     Divider()
                     Button(L10n.editDeviceList) {
                         audioManager.toggleEditMode()
+                    }
+                    // Ignored devices stay out of the panel; this is where they are brought back
+                    if !ignoredDevices.isEmpty {
+                        Menu(L10n.ignoredDevices) {
+                            Section(L10n.stopIgnoring) {
+                                ForEach(ignoredDevices, id: \.rowID) { device in
+                                    Button {
+                                        audioManager.unhideDevice(device)
+                                    } label: {
+                                        Label(device.name, systemImage: DeviceGlyph.symbol(for: device, category: device.type == .input ? nil : audioManager.priorityManager.getCategory(for: device)))
+                                    }
+                                }
+                            }
+                        }
                     }
                     Picker(L10n.language, selection: $audioManager.language) {
                         Text(L10n.systemDefault).tag(AppLanguage.system)
@@ -420,106 +436,6 @@ struct PanelMenuRow: View {
         .buttonStyle(.plain)
         .padding(.horizontal, 6)
         .onHover { isHovering = $0 }
-    }
-}
-
-struct HiddenDevicesToggleView: View {
-    @EnvironmentObject var audioManager: AudioManager
-    @State private var isExpanded = false
-
-    var allHiddenDevices: [AudioDevice] {
-        audioManager.hiddenInputDevices +
-        audioManager.hiddenSpeakerDevices +
-        audioManager.hiddenHeadphoneDevices
-    }
-
-    var body: some View {
-        if !allHiddenDevices.isEmpty {
-            Button {
-                withAnimation(.easeInOut(duration: 0.15)) {
-                    isExpanded.toggle()
-                }
-            } label: {
-                HStack(spacing: 5) {
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 9, weight: .semibold))
-                        .rotationEffect(.degrees(isExpanded ? 90 : 0))
-                    Image(systemName: "eye.slash")
-                        .font(.system(size: 11))
-                    Text(L10n.ignoredCount(allHiddenDevices.count))
-                        .font(.callout)
-                }
-                .foregroundColor(.secondary)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 6)
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel(L10n.ignoredCount(allHiddenDevices.count))
-            .popover(isPresented: $isExpanded, arrowEdge: .bottom) {
-                VStack(alignment: .leading, spacing: 4) {
-                    ForEach(allHiddenDevices, id: \.rowID) { device in
-                        HiddenDeviceRow(device: device)
-                    }
-                }
-                .padding(12)
-                .frame(minWidth: 220)
-            }
-        }
-    }
-}
-
-struct HiddenDeviceRow: View {
-    @EnvironmentObject var audioManager: AudioManager
-    let device: AudioDevice
-    @State private var isHovering = false
-
-    var body: some View {
-        HStack(spacing: 10) {
-            Image(systemName: DeviceGlyph.symbol(for: device, category: device.type == .input ? nil : audioManager.priorityManager.getCategory(for: device)))
-                .font(.system(size: 11))
-                .foregroundColor(.secondary)
-                .frame(width: 18)
-
-            Text(device.name)
-                .font(.body)
-                .foregroundColor(.secondary)
-                .lineLimit(1)
-                .truncationMode(.tail)
-
-            Spacer()
-
-            if isHovering {
-                Button {
-                    audioManager.unhideDevice(device)
-                } label: {
-                    Image(systemName: "eye")
-                        .font(.system(size: 13))
-                        .foregroundColor(.secondary)
-                }
-                .buttonStyle(.plain)
-                .help(L10n.stopIgnoring)
-                .transition(.opacity.combined(with: .scale(scale: 0.8)))
-            }
-        }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 8)
-        .background(
-            RoundedRectangle(cornerRadius: 8)
-                .fill(isHovering ? Color.primary.opacity(0.06) : Color.clear)
-        )
-        .animation(.easeInOut(duration: 0.15), value: isHovering)
-        .onHover { hovering in
-            withAnimation(.easeInOut(duration: 0.15)) {
-                isHovering = hovering
-            }
-        }
-        // The button shows on hover only, so VoiceOver gets it as an action
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(device.name)
-        .accessibilityAction(named: L10n.stopIgnoring) {
-            audioManager.unhideDevice(device)
-        }
     }
 }
 

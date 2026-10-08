@@ -43,14 +43,11 @@ enum L10n {
     static var autoSwitchPaused: String { pick("Auto-Switch Paused", "自动切换已暂停") }
     static var resumeAutoSwitchHelp: String { pick("Click to resume automatic switching", "点击恢复自动切换") }
 
-    static func ignoredCount(_ count: Int) -> String {
-        pick("\(count) Ignored", "已忽略 \(count) 个")
-    }
-
     // Main menu
     static var autoSwitch: String { pick("Switch Devices Automatically", "自动切换设备") }
     static var openAtLogin: String { pick("Open at Login", "开机启动") }
     static var editDeviceList: String { pick("Edit Device List", "编辑设备列表") }
+    static var ignoredDevices: String { pick("Ignored Devices", "已忽略的设备") }
     static var language: String { pick("Language", "语言") }
     static var systemDefault: String { pick("System Default", "跟随系统") }
     static var quit: String { pick("Quit SoundPin", "退出定音") }
