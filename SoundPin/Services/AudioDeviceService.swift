@@ -545,8 +545,9 @@ class AudioDeviceService {
             mElement: kAudioObjectPropertyElementMain
         )
 
-        var name: CFString?
-        var dataSize = UInt32(MemoryLayout<CFString?>.size)
+        // The property hands back a string the caller owns
+        var name: Unmanaged<CFString>?
+        var dataSize = UInt32(MemoryLayout<Unmanaged<CFString>?>.size)
 
         let status = AudioObjectGetPropertyData(
             id,
@@ -557,7 +558,8 @@ class AudioDeviceService {
             &name
         )
 
-        return status == noErr ? name as String? : nil
+        guard status == noErr, let name else { return nil }
+        return name.takeRetainedValue() as String
     }
 
     private func getDeviceUID(id: AudioObjectID) -> String? {
@@ -567,8 +569,8 @@ class AudioDeviceService {
             mElement: kAudioObjectPropertyElementMain
         )
 
-        var uid: CFString?
-        var dataSize = UInt32(MemoryLayout<CFString?>.size)
+        var uid: Unmanaged<CFString>?
+        var dataSize = UInt32(MemoryLayout<Unmanaged<CFString>?>.size)
 
         let status = AudioObjectGetPropertyData(
             id,
@@ -579,7 +581,8 @@ class AudioDeviceService {
             &uid
         )
 
-        return status == noErr ? uid as String? : nil
+        guard status == noErr, let uid else { return nil }
+        return uid.takeRetainedValue() as String
     }
 
     deinit {

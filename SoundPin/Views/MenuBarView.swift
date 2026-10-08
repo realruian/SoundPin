@@ -39,7 +39,6 @@ struct MenuBarView: View {
                                 audioManager.setOutputDevice(device)
                             },
                             onHide: { audioManager.hideDevice($0, category: .headphone) },
-                            onUnhide: { audioManager.unhideDevice($0, category: .headphone) },
                             category: .headphone,
                             showCategoryPicker: true
                         )
@@ -57,7 +56,6 @@ struct MenuBarView: View {
                             audioManager.setOutputDevice(device)
                         },
                         onHide: { audioManager.hideDevice($0, category: .speaker) },
-                        onUnhide: { audioManager.unhideDevice($0, category: .speaker) },
                         category: .speaker,
                         showCategoryPicker: true
                     )
@@ -73,7 +71,6 @@ struct MenuBarView: View {
                         onMove: audioManager.moveInputDevice,
                         onSelect: audioManager.setInputDevice,
                         onHide: { audioManager.hideDevice($0, category: nil) },
-                        onUnhide: { audioManager.unhideDevice($0, category: nil) },
                         category: nil,
                         showCategoryPicker: false
                     )
@@ -377,7 +374,6 @@ struct DeviceSectionView: View {
     let onMove: (IndexSet, Int) -> Void
     let onSelect: (AudioDevice) -> Void
     var onHide: ((AudioDevice) -> Void)?
-    var onUnhide: ((AudioDevice) -> Void)?
     var category: OutputCategory?
     var showCategoryPicker: Bool = false
 
@@ -404,7 +400,6 @@ struct DeviceSectionView: View {
                     onSelect: onSelect,
                     showCategoryPicker: showCategoryPicker,
                     onHide: onHide,
-                    onUnhide: onUnhide,
                     category: category
                 )
                 .padding(.horizontal, 6)

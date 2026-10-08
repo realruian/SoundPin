@@ -10,12 +10,15 @@ BUILT="$DERIVED/Build/Products/Release/$APP_NAME.app"
 
 echo "Building $APP_NAME (arm64 + x86_64)..."
 mkdir -p "$DERIVED"
-# Signed "to run locally": there is no Developer ID, so the image is not notarized
+# Signed "to run locally": there is no Developer ID, so the image is not notarized.
+# Without CODE_SIGN_INJECT_BASE_ENTITLEMENTS=NO Xcode gives a build signed this way the
+# get-task-allow entitlement, which lets any process attach a debugger to it.
 if ! xcodebuild -project "$APP_NAME.xcodeproj" -scheme "$APP_NAME" \
   -configuration Release \
   -derivedDataPath "$DERIVED" \
   -arch arm64 -arch x86_64 ONLY_ACTIVE_ARCH=NO \
   CODE_SIGN_IDENTITY="-" CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM="" \
+  CODE_SIGN_INJECT_BASE_ENTITLEMENTS=NO \
   build > "$DERIVED/build.log" 2>&1; then
   grep -E "error:" "$DERIVED/build.log" || tail -20 "$DERIVED/build.log"
   echo "Build failed. Full log: $DERIVED/build.log"

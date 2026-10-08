@@ -9,7 +9,6 @@ struct DeviceListView: View {
     let onSelect: (AudioDevice) -> Void
     var showCategoryPicker: Bool = false
     var onHide: ((AudioDevice) -> Void)?
-    var onUnhide: ((AudioDevice) -> Void)?
     var isHiddenSection: Bool = false
     var category: OutputCategory? = nil
 
@@ -25,12 +24,10 @@ struct DeviceListView: View {
                 DraggableDeviceRow(
                     device: device,
                     index: index,
-                    totalCount: devices.count,
                     isSelected: device.id == currentDeviceId,
                     onSelect: { onSelect(device) },
                     showCategoryPicker: showCategoryPicker,
                     onHide: onHide,
-                    onUnhide: onUnhide,
                     isHiddenSection: isHiddenSection,
                     category: category,
                     onMoveUp: index > 0 ? {
@@ -86,12 +83,10 @@ struct DraggableDeviceRow: View {
     @EnvironmentObject var audioManager: AudioManager
     let device: AudioDevice
     let index: Int
-    var totalCount: Int = 1
     let isSelected: Bool
     let onSelect: () -> Void
     var showCategoryPicker: Bool = false
     var onHide: ((AudioDevice) -> Void)?
-    var onUnhide: ((AudioDevice) -> Void)?
     var isHiddenSection: Bool = false
     var category: OutputCategory? = nil
     var onMoveUp: (() -> Void)?
