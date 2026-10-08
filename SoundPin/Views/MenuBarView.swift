@@ -202,6 +202,7 @@ struct PanelHeaderView: View {
             Text(L10n.sound)
                 .font(.body.weight(.semibold))
                 .foregroundColor(.panelLabel)
+                .accessibilityAddTraits(.isHeader)
 
             if audioManager.isCustomMode {
                 Button {
@@ -220,6 +221,7 @@ struct PanelHeaderView: View {
                 }
                 .buttonStyle(.plain)
                 .help(L10n.resumeAutoSwitchHelp)
+                .accessibilityLabel(L10n.autoSwitchPaused)
             }
 
             Spacer()
@@ -258,9 +260,11 @@ struct PanelHeaderView: View {
                         NSApplication.shared.terminate(nil)
                     }
                 } label: {
+                    // Named here: the symbol's own name, "More", is what VoiceOver would read otherwise
                     Image(systemName: "ellipsis.circle")
                         .font(.system(size: 14))
                         .foregroundColor(.secondary)
+                        .accessibilityLabel(L10n.options)
                 }
                 .menuStyle(.borderlessButton)
                 .menuIndicator(.hidden)
@@ -283,6 +287,7 @@ struct VolumeSliderView: View {
             Image(systemName: "speaker.fill")
                 .font(.system(size: 16))
                 .foregroundColor(.panelGlyph)
+                .accessibilityHidden(true)
 
             Slider(
                 value: Binding(
@@ -291,10 +296,13 @@ struct VolumeSliderView: View {
                 ),
                 in: 0...1
             )
+            .accessibilityLabel(L10n.volume)
+            .accessibilityValue("\(Int((audioManager.volume * 100).rounded()))%")
 
             Image(systemName: "speaker.wave.3.fill")
                 .font(.system(size: 16))
                 .foregroundColor(.panelGlyph)
+                .accessibilityHidden(true)
         }
         // An output with no volume the Mac can set, such as a screen: dimmed, as in the system menu
         .disabled(!audioManager.hasVolumeControl)
@@ -364,6 +372,7 @@ struct DeviceSectionView: View {
                 .foregroundColor(.secondary)
                 .padding(.horizontal, 14)
                 .padding(.top, 4.5)
+                .accessibilityAddTraits(.isHeader)
 
             if devices.isEmpty {
                 Text(L10n.noDevices)
@@ -446,6 +455,7 @@ struct HiddenDevicesToggleView: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .accessibilityLabel(L10n.ignoredCount(allHiddenDevices.count))
             .popover(isPresented: $isExpanded, arrowEdge: .bottom) {
                 VStack(alignment: .leading, spacing: 4) {
                     ForEach(allHiddenDevices, id: \.rowID) { device in
@@ -503,6 +513,12 @@ struct HiddenDeviceRow: View {
             withAnimation(.easeInOut(duration: 0.15)) {
                 isHovering = hovering
             }
+        }
+        // The button shows on hover only, so VoiceOver gets it as an action
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(device.name)
+        .accessibilityAction(named: L10n.stopIgnoring) {
+            audioManager.unhideDevice(device)
         }
     }
 }

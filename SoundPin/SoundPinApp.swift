@@ -17,6 +17,7 @@ struct SoundPinApp: App {
         } label: {
             // One Image only: a label made of several views did not show up reliably
             Image(systemName: audioManager.menuBarSymbol.name, variableValue: audioManager.menuBarSymbol.value)
+                .accessibilityLabel(L10n.appName)
         }
         .menuBarExtraStyle(.window)
     }

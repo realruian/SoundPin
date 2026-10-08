@@ -152,6 +152,92 @@ struct DraggableDeviceRow: View {
         device.isConnected && audioManager.isDeviceMuted(device)
     }
 
+    /// What VoiceOver reads after the name: the marks the row shows as small icons
+    private var accessibilityStatus: String {
+        var parts: [String] = []
+        if isDisconnected {
+            parts.append(L10n.notConnected)
+            if let lastSeenText {
+                parts.append(lastSeenText)
+            }
+        } else if isIgnored && audioManager.isEditMode {
+            parts.append(L10n.ignored)
+        } else if isNeverUse {
+            parts.append(L10n.neverAutoSelect)
+        }
+        if isMuted {
+            parts.append(L10n.muted)
+        }
+        return parts.joined(separator: L10n.listSeparator)
+    }
+
+    /// The ⋯ menu, one array per group between dividers. VoiceOver gets the same list as actions.
+    private var menuActionGroups: [[RowAction]] {
+        var groups: [[RowAction]] = []
+
+        if showCategoryPicker {
+            groups.append([
+                RowAction(title: L10n.moveToSpeakers, systemImage: "speaker.wave.2.fill") {
+                    audioManager.setCategory(.speaker, for: device)
+                },
+                RowAction(title: L10n.moveToHeadphones, systemImage: "headphones") {
+                    audioManager.setCategory(.headphone, for: device)
+                },
+            ])
+        }
+
+        if isHiddenSection || isIgnored {
+            groups.append([
+                RowAction(title: L10n.stopIgnoring, systemImage: "eye") {
+                    audioManager.unhideDevice(device)
+                },
+            ])
+        } else if let onHide {
+            var group = [
+                RowAction(title: L10n.ignore(in: device.type, category: category), systemImage: "eye.slash") {
+                    onHide(device)
+                },
+            ]
+            if device.type == .output {
+                group.append(RowAction(title: L10n.ignoreEntirely, systemImage: "eye.slash.fill") {
+                    audioManager.hideDeviceEntirely(device)
+                })
+            }
+            groups.append(group)
+        }
+
+        if isDisconnected {
+            groups.append([
+                RowAction(title: L10n.forgetDevice, systemImage: "trash", isDestructive: true) {
+                    audioManager.priorityManager.forgetDevice(device)
+                    audioManager.refreshDevices()
+                },
+            ])
+        } else {
+            let neverUse = audioManager.isNeverUse(device)
+            groups.append([
+                RowAction(
+                    title: neverUse ? L10n.allowAutoSelect : L10n.neverAutoSelect,
+                    systemImage: neverUse ? "checkmark.circle" : "nosign"
+                ) {
+                    audioManager.setNeverUse(device, neverUse: !neverUse)
+                },
+            ])
+        }
+
+        return groups
+    }
+
+    private func select() {
+        guard !isDisconnected else { return }
+        onSelect()
+        // With automatic switching on, the top of the list is what gets used,
+        // so a pick only sticks if it moves there
+        if !audioManager.isCustomMode {
+            onMoveToTop?()
+        }
+    }
+
     private func calculateTarget(offset: CGFloat) -> Int? {
         let rowsOffset = Int(round(offset / rowHeight))
         var newTarget = index + rowsOffset
@@ -215,66 +301,16 @@ struct DraggableDeviceRow: View {
                 if isHovering && !isDragging {
                     Group {
                     Menu {
-                    if showCategoryPicker {
-                        Button {
-                            audioManager.setCategory(.speaker, for: device)
-                        } label: {
-                            Label(L10n.moveToSpeakers, systemImage: "speaker.wave.2.fill")
-                        }
-                        Button {
-                            audioManager.setCategory(.headphone, for: device)
-                        } label: {
-                            Label(L10n.moveToHeadphones, systemImage: "headphones")
-                        }
-                        Divider()
-                    }
-
-                    if isHiddenSection || isIgnored {
-                        Button {
-                            audioManager.unhideDevice(device)
-                        } label: {
-                            Label(L10n.stopIgnoring, systemImage: "eye")
-                        }
-                    } else {
-                        if let onHide {
-                            Button {
-                                onHide(device)
-                            } label: {
-                                Label(L10n.ignore(in: device.type, category: category), systemImage: "eye.slash")
+                        ForEach(Array(menuActionGroups.enumerated()), id: \.offset) { index, group in
+                            if index > 0 {
+                                Divider()
                             }
-
-                            if device.type == .output {
-                                Button {
-                                    audioManager.hideDeviceEntirely(device)
-                                } label: {
-                                    Label(L10n.ignoreEntirely, systemImage: "eye.slash.fill")
+                            ForEach(group) { action in
+                                Button(role: action.isDestructive ? .destructive : nil, action: action.perform) {
+                                    Label(action.title, systemImage: action.systemImage)
                                 }
                             }
                         }
-                    }
-
-                    if isDisconnected {
-                        Divider()
-                        Button(role: .destructive) {
-                            audioManager.priorityManager.forgetDevice(device)
-                            audioManager.refreshDevices()
-                        } label: {
-                            Label(L10n.forgetDevice, systemImage: "trash")
-                        }
-                    }
-
-                    if device.isConnected {
-                        Divider()
-                        Button {
-                            audioManager.setNeverUse(device, neverUse: !audioManager.isNeverUse(device))
-                        } label: {
-                            if audioManager.isNeverUse(device) {
-                                Label(L10n.allowAutoSelect, systemImage: "checkmark.circle")
-                            } else {
-                                Label(L10n.neverAutoSelect, systemImage: "nosign")
-                            }
-                        }
-                    }
                     } label: {
                         Image(systemName: "ellipsis.circle")
                             .font(.system(size: 14))
@@ -332,13 +368,7 @@ struct DraggableDeviceRow: View {
         .animation(.easeInOut(duration: 0.1), value: isDropTargetBelow)
         .contentShape(Rectangle())
         .onTapGesture {
-            guard !isDisconnected else { return }
-            onSelect()
-            // With automatic switching on, the top of the list is what gets used,
-            // so a pick only sticks if it moves there
-            if !audioManager.isCustomMode {
-                onMoveToTop?()
-            }
+            select()
         }
         .gesture(
             DragGesture(minimumDistance: 5)
@@ -357,6 +387,58 @@ struct DraggableDeviceRow: View {
                     onDragEnded()
                 }
         )
+        .modifier(RowKeyboardSupport(activate: select))
+        // VoiceOver reads the row as one button. The ⋯ menu shows on hover only and a drag
+        // needs a pointer, so both are offered as actions.
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(device.name)
+        .accessibilityValue(accessibilityStatus)
+        .accessibilityAddTraits(isActive ? [.isButton, .isSelected] : .isButton)
+        .accessibilityAction(.default, select)
+        .accessibilityActions {
+            if let onMoveToTop {
+                Button(L10n.moveToTop, action: onMoveToTop)
+            }
+            if let onMoveUp {
+                Button(L10n.moveUp, action: onMoveUp)
+            }
+            if let onMoveDown {
+                Button(L10n.moveDown, action: onMoveDown)
+            }
+            ForEach(menuActionGroups.flatMap { $0 }) { action in
+                Button(action.title, action: action.perform)
+            }
+        }
+    }
+}
+
+/// One entry of a row's ⋯ menu
+private struct RowAction: Identifiable {
+    let title: String
+    let systemImage: String
+    var isDestructive = false
+    let perform: () -> Void
+
+    var id: String { title }
+}
+
+/// Lets a row take keyboard focus the way a button does (with Keyboard Navigation on in
+/// System Settings) and be picked with Space or Return. The key handling needs macOS 14.
+private struct RowKeyboardSupport: ViewModifier {
+    let activate: () -> Void
+
+    func body(content: Content) -> some View {
+        if #available(macOS 14.0, *) {
+            content
+                .contentShape(.focusEffect, RoundedRectangle(cornerRadius: 8))
+                .focusable(true, interactions: .activate)
+                .onKeyPress(keys: [.space, .return]) { _ in
+                    activate()
+                    return .handled
+                }
+        } else {
+            content
+        }
     }
 }
 

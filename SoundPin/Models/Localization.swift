@@ -55,6 +55,17 @@ enum L10n {
     static var systemDefault: String { pick("System Default", "跟随系统") }
     static var quit: String { pick("Quit SoundPin", "退出定音") }
 
+    // What VoiceOver reads for the parts of the panel that are shown as icons only
+    static var appName: String { pick("SoundPin", "定音") }
+    static var volume: String { pick("Volume", "音量") }
+    static var options: String { pick("Options", "选项") }
+    static var notConnected: String { pick("Not Connected", "未连接") }
+    static var ignored: String { pick("Ignored", "已忽略") }
+    static var moveUp: String { pick("Move Up", "上移") }
+    static var moveDown: String { pick("Move Down", "下移") }
+    static var moveToTop: String { pick("Move to Top", "置顶") }
+    static var listSeparator: String { pick(", ", "，") }
+
     // Device menu
     static var muted: String { pick("Muted", "已静音") }
     static var moveToSpeakers: String { pick("Move to Speakers", "移到扬声器") }
