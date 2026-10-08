@@ -60,8 +60,10 @@ class PriorityManager {
         var known = getKnownDevices()
         let now = Date()
         for device in devices {
-            let stored = StoredDevice(uid: device.uid, name: device.name, isInput: device.type == .input, lastSeen: now)
-            if let index = known.firstIndex(where: { $0.uid == device.uid }) {
+            let isInput = device.type == .input
+            let stored = StoredDevice(uid: device.uid, name: device.name, isInput: isInput, lastSeen: now)
+            // A device with both a microphone and a speaker has one UID for the two; each gets its own entry
+            if let index = known.firstIndex(where: { $0.uid == device.uid && $0.isInput == isInput }) {
                 // Update name and lastSeen
                 known[index] = stored
             } else {
@@ -75,9 +77,10 @@ class PriorityManager {
         getKnownDevices().first { $0.uid == uid }
     }
 
-    func forgetDevice(_ uid: String) {
+    func forgetDevice(_ device: AudioDevice) {
+        let isInput = device.type == .input
         var known = getKnownDevices()
-        known.removeAll { $0.uid == uid }
+        known.removeAll { $0.uid == device.uid && $0.isInput == isInput }
         saveKnownDevices(known)
     }
 
@@ -116,7 +119,7 @@ class PriorityManager {
         }
         // Default headphone-like devices to headphone category
         if HeadphoneDetection.isHeadphone(deviceName: device.name) {
-            // A screen's audio is never headphones, whatever its name contains ("UltraGear" has "ear" in it)
+            // A screen's audio is never headphones, whatever its name matches
             if let transport = device.transportType,
                transport == kAudioDeviceTransportTypeDisplayPort || transport == kAudioDeviceTransportTypeHDMI {
                 return .speaker

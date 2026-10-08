@@ -29,6 +29,12 @@ struct AudioDevice: Identifiable, Equatable, Hashable {
         id != kAudioObjectUnknown
     }
 
+    /// Identity of a row in a list. `id` cannot serve: every disconnected device has id 0,
+    /// and a device with both a microphone and a speaker has one id for the two.
+    var rowID: String {
+        "\(type.rawValue):\(uid)"
+    }
+
     // Create a disconnected placeholder from stored device
     static func disconnected(uid: String, name: String, type: AudioDeviceType) -> AudioDevice {
         AudioDevice(id: 0, uid: uid, name: name, type: type, isConnected: false)

@@ -437,7 +437,7 @@ struct HiddenDevicesToggleView: View {
             .buttonStyle(.plain)
             .popover(isPresented: $isExpanded, arrowEdge: .bottom) {
                 VStack(alignment: .leading, spacing: 4) {
-                    ForEach(allHiddenDevices, id: \.id) { device in
+                    ForEach(allHiddenDevices, id: \.rowID) { device in
                         HiddenDeviceRow(device: device)
                     }
                 }

@@ -21,7 +21,7 @@ struct DeviceListView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            ForEach(Array(devices.enumerated()), id: \.element.id) { index, device in
+            ForEach(Array(devices.enumerated()), id: \.element.rowID) { index, device in
                 DraggableDeviceRow(
                     device: device,
                     index: index,
@@ -256,7 +256,7 @@ struct DraggableDeviceRow: View {
                     if isDisconnected {
                         Divider()
                         Button(role: .destructive) {
-                            audioManager.priorityManager.forgetDevice(device.uid)
+                            audioManager.priorityManager.forgetDevice(device)
                             audioManager.refreshDevices()
                         } label: {
                             Label(L10n.forgetDevice, systemImage: "trash")

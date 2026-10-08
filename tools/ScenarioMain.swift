@@ -18,6 +18,8 @@ import CoreAudio
             ("MacBook Pro Speakers", builtIn), ("Mac mini Speakers", builtIn),
             ("Mi Monitor", DP), ("LG UltraGear", HDMI), ("Studio Display Speakers", USB), ("SAMSUNG TV", HDMI),
             ("JBL Flip 6", BT), ("Sony SRS-XB13", BT), ("EDIFIER R1700BT", BT), ("Marshall Stanmore", BT),
+            ("Beats Pill", BT), ("Bose SoundLink Revolve+", BT), ("Soundcore Motion+", BT), ("Jabra Speak 750", USB),
+            ("LG UltraGear GP9", BT), ("Nothing Ear (2)", BT), ("EarFun Air Pro 4", BT), ("EDIFIER STAX SPIRIT S3", BT),
             ("Scarlett Solo USB", USB), ("HomePod", airPlay), ("客厅", airPlay), ("Apple TV", airPlay),
             ("BlackHole 2ch", virtual), ("Multi-Output Device", kAudioDeviceTransportTypeAggregate),
         ]
