@@ -52,7 +52,7 @@ enum L10n {
     static var editDeviceList: String { pick("Edit Device List", "编辑设备列表") }
     static var language: String { pick("Language", "语言") }
     static var systemDefault: String { pick("System Default", "跟随系统") }
-    static var quit: String { pick("Quit", "退出") }
+    static var quit: String { pick("Quit SoundPin", "退出定音") }
 
     // Device menu
     static var muted: String { pick("Muted", "已静音") }

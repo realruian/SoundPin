@@ -2,8 +2,13 @@ import SwiftUI
 import CoreAudio
 
 @main
-struct AudioPriorityBarApp: App {
+struct SoundPinApp: App {
     @StateObject private var audioManager = AudioManager()
+
+    init() {
+        // Before anything reads the settings
+        SettingsMigration.run()
+    }
     
     var body: some Scene {
         MenuBarExtra {
@@ -14,6 +19,24 @@ struct AudioPriorityBarApp: App {
             Image(systemName: audioManager.menuBarSymbol.name, variableValue: audioManager.menuBarSymbol.value)
         }
         .menuBarExtraStyle(.window)
+    }
+}
+
+/// Versions up to 2.1 were called Audio Priority Bar and kept their settings under another
+/// identifier. The first launch under the new name copies them over once.
+enum SettingsMigration {
+    private static let oldDomain = "app.audioprioritybar"
+    private static let doneKey = "migratedFromAudioPriorityBar"
+
+    static func run() {
+        let defaults = UserDefaults.standard
+        guard !defaults.bool(forKey: doneKey) else { return }
+        if let old = defaults.persistentDomain(forName: oldDomain) {
+            for (key, value) in old where defaults.object(forKey: key) == nil {
+                defaults.set(value, forKey: key)
+            }
+        }
+        defaults.set(true, forKey: doneKey)
     }
 }
 

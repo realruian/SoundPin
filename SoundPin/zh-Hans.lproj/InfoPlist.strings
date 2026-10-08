@@ -1,0 +1,3 @@
+/* The app's name as Finder and the system show it */
+"CFBundleDisplayName" = "定音";
+"CFBundleName" = "定音";

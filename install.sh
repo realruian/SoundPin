@@ -3,7 +3,7 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
-APP_NAME="AudioPriorityBar"
+APP_NAME="SoundPin"
 DERIVED=".build"
 BUILT="$DERIVED/Build/Products/Release/$APP_NAME.app"
 DEST="/Applications/$APP_NAME.app"

@@ -7,8 +7,8 @@ cd "$(dirname "$0")/.."
 
 WORK=".build/scenario"
 mkdir -p "$WORK/src"
-cp AudioPriorityBar/Models/*.swift AudioPriorityBar/Services/*.swift AudioPriorityBar/Views/*.swift "$WORK/src/"
-sed 's/^@main$//' AudioPriorityBar/AudioPriorityBarApp.swift > "$WORK/src/AudioPriorityBarApp.swift"
+cp SoundPin/Models/*.swift SoundPin/Services/*.swift SoundPin/Views/*.swift "$WORK/src/"
+sed 's/^@main$//' SoundPin/SoundPinApp.swift > "$WORK/src/SoundPinApp.swift"
 cp tools/ScenarioMain.swift "$WORK/src/"
 swiftc -suppress-warnings -parse-as-library -o "$WORK/apbscenario" "$WORK"/src/*.swift
 

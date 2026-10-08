@@ -3,9 +3,9 @@
 <plist version="1.0">
 <dict>
     <key>CFBundleName</key>
-    <string>Audio Priority Bar</string>
+    <string>SoundPin</string>
     <key>CFBundleDisplayName</key>
-    <string>Audio Priority Bar</string>
+    <string>SoundPin</string>
     <key>CFBundleIdentifier</key>
     <string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
     <key>CFBundleVersion</key>
@@ -23,6 +23,8 @@
     <key>LSApplicationCategoryType</key>
     <string>public.app-category.utilities</string>
     <key>LSUIElement</key>
+    <true/>
+    <key>LSHasLocalizedDisplayName</key>
     <true/>
 </dict>
 </plist>

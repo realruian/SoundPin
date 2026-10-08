@@ -1,9 +1,9 @@
 #!/bin/bash
 set -e
 
-echo "Building AudioPriorityBar..."
+echo "Building SoundPin..."
 
-xcodebuild -scheme AudioPriorityBar \
+xcodebuild -scheme SoundPin \
   -configuration Release \
   -derivedDataPath .build \
   -arch arm64 -arch x86_64 \
@@ -14,8 +14,8 @@ xcodebuild -scheme AudioPriorityBar \
   build
 
 mkdir -p dist
-rm -rf dist/AudioPriorityBar.app
-cp -R .build/Build/Products/Release/AudioPriorityBar.app dist/
+rm -rf dist/SoundPin.app
+cp -R .build/Build/Products/Release/SoundPin.app dist/
 
 echo ""
-echo "Build complete: dist/AudioPriorityBar.app"
+echo "Build complete: dist/SoundPin.app"

@@ -7,7 +7,7 @@ import CoreAudio
 // gives this process its own copy of the settings with automatic switching off,
 // so creating AudioManager here applies nothing to the audio devices.
 //
-//   apbpreview <output.png> [--manual-look] [--edit-look] [--demo] [--lang en|zh-Hans]
+//   soundpinpreview <output.png> [--manual-look] [--edit-look] [--demo] [--lang en|zh-Hans]
 //
 // --demo swaps this Mac's devices for a sample set and frames the panel, for a
 // screenshot that can be published.

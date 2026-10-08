@@ -4,7 +4,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-APP_NAME="AudioPriorityBar"
+APP_NAME="SoundPin"
 DERIVED=".build/release"
 BUILT="$DERIVED/Build/Products/Release/$APP_NAME.app"
 
@@ -34,7 +34,7 @@ ditto "$BUILT" "$STAGE/$APP_NAME.app"
 # Lets the user drag the app onto Applications inside the image
 ln -s /Applications "$STAGE/Applications"
 # hdiutil prints a deprecation notice on newer macOS; it goes to a log unless the command fails
-if ! hdiutil create -volname "Audio Priority Bar" -srcfolder "$STAGE" -ov -format UDZO "$DMG" > "$DERIVED/hdiutil.log" 2>&1; then
+if ! hdiutil create -volname "SoundPin" -srcfolder "$STAGE" -ov -format UDZO "$DMG" > "$DERIVED/hdiutil.log" 2>&1; then
   cat "$DERIVED/hdiutil.log"
   exit 1
 fi
