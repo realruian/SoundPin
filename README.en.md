@@ -19,10 +19,8 @@
 </p>
 
 <p align="center">
-  <img src="screenshot.png" width="376" alt="The Audio Priority Bar panel">
+  <img src="screenshot-en.png" width="364" alt="The Audio Priority Bar panel">
 </p>
-
-> The interface is in Simplified Chinese. For an English interface, see the original project, [tobi/AudioPriorityBar](https://github.com/tobi/AudioPriorityBar).
 
 ## Why
 
@@ -38,6 +36,7 @@ Audio Priority Bar keeps a ranked list for speakers, headphones and microphones,
 - **A panel in the system's style**: laid out after the macOS Sound menu, with an icon for each kind of device.
 - **A menu bar icon that follows the state**: mute, volume level, and the headphones in use.
 - **Runs locally**: no network access, no recording, no microphone permission, no analytics.
+- **English and Chinese**: the interface follows the system language, or the one you pick in the menu.
 
 ## Install
 
@@ -71,16 +70,16 @@ The app has no window and no Dock icon, only a speaker icon in the menu bar.
 
 ## Usage
 
-On first use, open the panel, move the devices you want to the top of each list, and turn on "开机启动" (open at login) in the ⋯ menu at the top right.
+On first use, open the panel, move the devices you want to the top of each list, and turn on Open at Login in the ⋯ menu at the top right.
 
 | Action | Result |
 |---|---|
 | Click a device | Selects it and moves it to the top of its list |
 | Drag a device | Changes the priority order |
 | Hover a device and click its ⋯ | Ignore the device, never pick it automatically, or move it between headphones and speakers |
-| The ⋯ menu next to the title | Automatic switching on or off, open at login, edit the device list, quit |
+| The ⋯ menu next to the title | Automatic switching on or off, open at login, edit the device list, language, quit |
 | Edit the device list | Shows disconnected devices, to rank them ahead of time or forget old ones |
-| 声音设置… | Opens Sound in System Settings |
+| Sound Settings… | Opens Sound in System Settings |
 
 With automatic switching off, the app leaves the devices alone, and an orange notice next to the title says so. Click the notice to turn switching back on.
 
@@ -117,7 +116,7 @@ defaults delete app.audioprioritybar
 
 The menu bar panel cannot be captured from outside, so the repository carries two tools for checking changes:
 
-- `tools/render-preview.sh [output.png] [--manual-look] [--edit-look] [--demo]` renders the panel to an image. It does not change the audio devices.
+- `tools/render-preview.sh [output.png] [--manual-look] [--edit-look] [--demo] [--lang en|zh-Hans]` renders the panel to an image. It does not change the audio devices.
 - `tools/check-devices.sh` prints which list and which icon a table of sample devices gets.
 
 The download is made by `tools/make-dmg.sh`, which builds a universal app and packs it into a `.dmg` under `dist/`.
@@ -127,7 +126,7 @@ The download is made by `tools/make-dmg.sh`, which builds a universal app and pa
 This project is based on [tobi/AudioPriorityBar](https://github.com/tobi/AudioPriorityBar). The priority-switching logic is the original author's. Changes made here:
 
 - The panel is restyled after the macOS Sound menu
-- The interface is translated to Chinese
+- The interface is in English and Chinese, following the system language by default
 - Clicking a device selects it and moves it to the top (the original ignores clicks while switching is automatic)
 - The menu bar icon follows mute, volume and headphone state
 - The device list no longer collapses in the menu bar panel on macOS 27

@@ -19,7 +19,7 @@
 </p>
 
 <p align="center">
-  <img src="screenshot.png" width="376" alt="Audio Priority Bar 面板">
+  <img src="screenshot.png" width="364" alt="Audio Priority Bar 面板">
 </p>
 
 ## 为什么需要它
@@ -36,7 +36,7 @@ Audio Priority Bar 给扬声器、耳机、麦克风各排一个优先级，始�
 - **系统风格的面板**：样式照着 macOS 自带的"声音"菜单做，设备图标按型号显示。
 - **菜单栏图标跟随状态**：静音、音量大小、正在使用的耳机，一眼能看出来。
 - **只在本机运行**：不联网，不录音，不申请麦克风权限，没有统计上报。
-- **中文界面**
+- **中英文界面**：默认跟随系统语言，也可以在菜单里固定为中文或英文。
 
 ## 安装
 
@@ -77,7 +77,7 @@ App 没有窗口，也不在程序坞里，只有菜单栏上的一个喇叭图�
 | 点一个设备 | 选中它，并把它排到该组第一位 |
 | 拖动设备 | 调整优先级顺序 |
 | 鼠标移到设备上，点右侧的 ⋯ | 忽略这个设备、永不自动选用、移到耳机或扬声器组 |
-| 标题右侧的 ⋯ 菜单 | 开关自动切换、开机启动、编辑设备列表、退出 |
+| 标题右侧的 ⋯ 菜单 | 开关自动切换、开机启动、编辑设备列表、切换语言、退出 |
 | 编辑设备列表 | 显示没连接的设备，方便提前排好顺序或删除旧设备 |
 | 声音设置… | 打开系统的声音设置 |
 
@@ -116,7 +116,7 @@ defaults delete app.audioprioritybar
 
 菜单栏面板没法从外部截图，所以仓库里带了两个检查工具：
 
-- `tools/render-preview.sh [输出.png] [--manual-look] [--edit-look] [--demo]`：把面板离线渲染成图片。不会改动音频设备。
+- `tools/render-preview.sh [输出.png] [--manual-look] [--edit-look] [--demo] [--lang en|zh-Hans]`：把面板离线渲染成图片。不会改动音频设备。
 - `tools/check-devices.sh`：打印一组样例设备分别落在哪个组、用哪个图标。
 
 发布用的安装包由 `tools/make-dmg.sh` 生成，它会构建通用版本并打包成 `dist/` 下的 `.dmg`。
@@ -126,7 +126,7 @@ defaults delete app.audioprioritybar
 本项目基于 [tobi/AudioPriorityBar](https://github.com/tobi/AudioPriorityBar)，优先级切换的核心逻辑来自原作者 tobi。在原版基础上的改动：
 
 - 面板按 macOS 系统"声音"菜单的样式重做
-- 界面文字改为中文
+- 界面支持中文和英文，默认跟随系统语言
 - 点击设备会选中并置顶（原版在自动模式下点击无反应）
 - 菜单栏图标跟随静音、音量和耳机状态
 - 修复设备列表在 macOS 27 的菜单栏面板里不显示的问题
