@@ -37,7 +37,7 @@ SoundPin maintains priority lists for speakers, headphones, and microphones. Whe
 
 - **Priority-based switching**: Automatically routes audio to the highest-ranked connected device, and restores it when changed by other apps.
 - **Separate headphone and speaker lists**: Routes to headphones when connected, and returns to desktop speakers when disconnected. Display audio (HDMI/DisplayPort) is filtered so it is never mistaken for headphones.
-- **Click to promote**: Clicking any connected device selects it immediately and moves it to the top of its priority list.
+- **Click to promote**: Clicking any connected device selects it immediately. With automatic switching on, it also moves to the top of its priority list.
 - **Scroll wheel volume control**: Hover over the volume slider and scroll to adjust the volume.
 - **System-style panel**: Designed after the macOS Sound menu. The menu bar icon reflects volume level, mute state, and connected headphone models.
 - **Offline device memory**: Disconnected devices remain in the list with last-seen timestamps, allowing you to organize priorities ahead of time.
@@ -63,7 +63,7 @@ The app was renamed to SoundPin in version 2.2 with a new bundle identifier. Rem
 
 ### Build from source
 
-Requires Xcode Command Line Tools:
+Requires Xcode 26 or later (the app icon is an Icon Composer file; the Command Line Tools alone cannot build the project):
 
 ```bash
 git clone https://github.com/realruian/SoundPin.git
@@ -71,7 +71,7 @@ cd SoundPin
 ./install.sh
 ```
 
-`install.sh` builds a universal binary, installs it to `/Applications/SoundPin.app`, and opens it.
+`install.sh` builds for this Mac's architecture, installs the app to `/Applications/SoundPin.app`, and opens it. Universal builds come from `tools/make-dmg.sh`.
 
 ## Usage
 
@@ -79,7 +79,7 @@ SoundPin runs in the menu bar as a speaker icon:
 
 | Action | Result |
 |---|---|
-| Click a device | Selects it and moves it to the top of its category |
+| Click a device | Selects it; with automatic switching on, also moves it to the top of its category |
 | Drag a device | Reorders priorities |
 | Scroll on volume slider | Adjusts output volume |
 | Keyboard (macOS 14+) | With Keyboard Navigation on, press Tab to focus and Space/Return to select |
@@ -109,11 +109,17 @@ defaults read io.github.realruian.SoundPin
 
 ## Uninstall
 
-Quit the app from the menu, then run:
+If Open at Login is on, turn it off from the ⋯ menu first; otherwise an entry stays behind under System Settings → General → Login Items. Then quit the app from the ⋯ menu and run:
 
 ```bash
 rm -rf /Applications/SoundPin.app
 defaults delete io.github.realruian.SoundPin
+```
+
+If you upgraded from Audio Priority Bar, its old settings can be removed too:
+
+```bash
+defaults delete app.audioprioritybar
 ```
 
 ## Development

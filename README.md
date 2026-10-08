@@ -37,7 +37,7 @@ SoundPin（中文名“定音”）为扬声器、耳机和麦克风分别维护
 
 - **按优先级自动切换**：设备插拔或被外部应用篡改默认设备时，自动切回当前最高优先级设备。
 - **耳机与扬声器独立管理**：连接耳机时自动使用耳机，断开后自动恢复桌面扬声器；通过硬件传输协议过滤，HDMI 与 DisplayPort 显示器音频不会被误识别为耳机。
-- **点击置顶**：在面板中点击任意设备即可立即选用，并自动置顶为该类别第一优先级。
+- **点击置顶**：在面板中点击任意设备即可立即选用；自动切换开启时，还会将其置顶为该类别第一优先级。
 - **滚轮调节音量**：鼠标悬停在音量滑块上可直接滚动滚轮微调音量。
 - **系统风格面板**：依照 macOS 系统声音菜单设计，菜单栏图标跟随音量、静音及耳机状态动态更新。
 - **离线设备记忆**：断开连接的设备仍保留在排序列表中并标有最后活跃时间，支持脱机调整优先级。
@@ -63,7 +63,7 @@ SoundPin（中文名“定音”）为扬声器、耳机和麦克风分别维护
 
 ### 从源码构建
 
-需要 Xcode 命令行工具：
+需要 Xcode 26 或更高版本（应用图标为 Icon Composer 格式，仅安装命令行工具无法构建）：
 
 ```bash
 git clone https://github.com/realruian/SoundPin.git
@@ -71,7 +71,7 @@ cd SoundPin
 ./install.sh
 ```
 
-`install.sh` 会编译 Universal 通用架构二进制文件，安装至 `/Applications/SoundPin.app` 并启动。
+`install.sh` 会编译适用于本机架构的版本，安装至 `/Applications/SoundPin.app` 并启动。Universal 通用版本由 `tools/make-dmg.sh` 构建。
 
 ## 使用说明
 
@@ -79,7 +79,7 @@ cd SoundPin
 
 | 操作 | 效果 |
 |---|---|
-| 单击设备 | 立即选用该设备，并提升为该分类第一优先级 |
+| 单击设备 | 立即选用该设备；自动切换开启时，同时提升为该分类第一优先级 |
 | 拖拽设备 | 调整优先级顺序 |
 | 悬停音量条滚动 | 使用鼠标或触控板滚轮快速调节音量 |
 | 键盘导航（macOS 14+） | 开启系统“键盘导航”后，按 Tab 聚焦设备，空格或回车选用 |
@@ -109,11 +109,17 @@ defaults read io.github.realruian.SoundPin
 
 ## 卸载
 
-在面板 ⋯ 菜单中退出应用，然后在终端中运行：
+如已开启“开机启动”，先在面板 ⋯ 菜单中将其关闭，否则“系统设置 → 通用 → 登录项”中会留下一条记录。随后在 ⋯ 菜单中退出应用，并在终端中运行：
 
 ```bash
 rm -rf /Applications/SoundPin.app
 defaults delete io.github.realruian.SoundPin
+```
+
+从 Audio Priority Bar 升级而来的用户，旧版的偏好设置可一并删除：
+
+```bash
+defaults delete app.audioprioritybar
 ```
 
 ## 开发工具
