@@ -22,6 +22,9 @@ import CoreAudio
             ("LG UltraGear GP9", BT), ("Nothing Ear (2)", BT), ("EarFun Air Pro 4", BT), ("EDIFIER STAX SPIRIT S3", BT),
             ("Scarlett Solo USB", USB), ("HomePod", airPlay), ("客厅", airPlay), ("Apple TV", airPlay),
             ("BlackHole 2ch", virtual), ("Multi-Output Device", kAudioDeviceTransportTypeAggregate),
+            ("WH-CH720N", BT), ("LE_WF-C500", BT), ("Shokz OpenRun Pro", BT), ("HUAWEI FreeClip", BT), ("LG TONE Free T90", BT), ("vivo TWS 3", BT),
+            ("Anker PowerConf S3", USB), ("Poly Studio", USB), ("Jabra PanaCast 50", USB), ("Soundcore 3", BT), ("EDIFIER QD35", BT),
+            ("HomePods", airPlay), ("ViewSonic ELITE XG270", USB), ("Bowers & Wilkins Zeppelin", airPlay),
         ]
         let inputs: [(String, UInt32)] = [
             ("Wireless Mic Rx", USB), ("MacBook Pro Microphone", builtIn), ("External Microphone", builtIn),

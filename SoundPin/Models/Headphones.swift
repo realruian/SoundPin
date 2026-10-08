@@ -17,6 +17,11 @@ struct HeadphoneDetection {
     /// "ear" where it opens a word ("Nothing Ear", "EarFun", "On-Ear"), not inside one ("UltraGear")
     private static let wornPattern = #"(?<![a-z])ear"#
 
+    /// Names in which a worn word is part of another word: "HomePods" has "pods" in it
+    static let notWornWords: [String] = [
+        "homepod",
+    ]
+
     /// Speakers and speakerphones, by what they are called or by product line. Checked
     /// before `keywords`, because many of the makers listed there sell both: a Marshall
     /// Stanmore or a Beats Pill is a speaker.
@@ -47,9 +52,15 @@ struct HeadphoneDetection {
         "middleton",
         "willen",
 
-        // Jabra and Poly speakerphones
+        // Speakerphones and video bars
+        "speakerphone",
+        "conference",
         "jabra speak",
+        "panacast",
         "poly sync",
+        "poly studio",
+        "polycom",
+        "powerconf",
 
         // Anker Soundcore
         "soundcore motion",
@@ -58,18 +69,25 @@ struct HeadphoneDetection {
         "soundcore mini",
         "soundcore rave",
         "soundcore glow",
+        "soundcore select",
 
         // Bang & Olufsen
         "beosound",
         "beolit",
 
-        // Razer
+        // Razer, SteelSeries, Corsair
         "razer leviathan",
         "razer nommo",
+        "steelseries arena",
+        "corsair sp",
+
+        // Bowers & Wilkins
+        "zeppelin",
     ]
 
-    /// Edifier's speaker ranges (R1700BT, S1000, MR4); its headphones are the W, WH and X ranges
-    private static let speakerPattern = #"edifier (r|s|d|m|mr|mp|qr|es)\d"#
+    /// Edifier's speaker ranges (R1700BT, S1000, MR4, QD35); its headphones are the W, WH and X ranges.
+    /// Soundcore's first speakers are called just that, or that and a number ("Soundcore 3").
+    private static let speakerPattern = #"edifier (r|s|d|m|mr|mp|mf|qr|qd|es)\d|soundcore( \d|$)"#
 
     /// Makers and product lines that indicate headphones/earbuds
     static let keywords: [String] = [
@@ -84,10 +102,9 @@ struct HeadphoneDetection {
         "beats studio",
 
         // Sony
-        "wh-1000",  // WH-1000XM series
-        "wf-1000",  // WF-1000XM series
         "linkbuds",
         "inzone",
+        "ult wear",
 
         // Samsung
         "galaxy buds",
@@ -105,13 +122,13 @@ struct HeadphoneDetection {
 
         // Sennheiser
         "momentum",
+        "accentum",
         "hd 4",
         "hd 5",
         "pxc",
 
         // Jabra
         "jabra",
-        "elite",
         "evolve",
 
         // JBL
@@ -128,6 +145,12 @@ struct HeadphoneDetection {
         "oneplus buds",
         "pixel buds",
         "huawei freebuds",
+        "freeclip",
+        "freelace",
+        "lg tone",
+        "lg-tone",
+        "qcy",
+        "shokz",
         "oppo enco",
         "technics eah",
         "bowers",
@@ -157,16 +180,23 @@ struct HeadphoneDetection {
         "moondrop",
     ]
 
+    /// Model numbers and abbreviations that are a word of their own: Sony's WH-, WF- and WI-
+    /// ranges ("WH-1000XM5", "LE_WH-CH720N"), and "TWS" for true wireless earbuds
+    private static let keywordPattern = #"(?<![a-z0-9])w[hfi]-[a-z0-9]|(?<![a-z])tws(?![a-z])"#
+
     /// Check if a device name matches headphone patterns
     static func isHeadphone(deviceName: String) -> Bool {
         let nameLower = deviceName.lowercased()
+        if notWornWords.contains(where: { nameLower.contains($0) }) {
+            return false
+        }
         if wornWords.contains(where: { nameLower.contains($0) }) || matches(wornPattern, nameLower) {
             return true
         }
         if speakerWords.contains(where: { nameLower.contains($0) }) || matches(speakerPattern, nameLower) {
             return false
         }
-        return keywords.contains { nameLower.contains($0) }
+        return keywords.contains { nameLower.contains($0) } || matches(keywordPattern, nameLower)
     }
 
     private static func matches(_ pattern: String, _ name: String) -> Bool {
