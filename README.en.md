@@ -5,8 +5,8 @@
 <h1 align="center">SoundPin</h1>
 
 <p align="center">
-  <b>Keep your Mac on the microphone and speakers you chose — no more AirPods hijacking your input.</b><br>
-  A smart audio device priority manager for the macOS menu bar.
+  Keep your Mac on the audio devices you chose.<br>
+  A menu bar utility that prevents unwanted default device switches.
 </p>
 
 <p align="center">
@@ -18,7 +18,7 @@
 </p>
 
 <p align="center">
-  <a href="README.md">简体中文</a> · <b>English</b>
+  <a href="README.md">简体中文</a> · English
 </p>
 
 <p align="center">
@@ -27,55 +27,42 @@
 
 ---
 
-## 💡 Why SoundPin?
+## Why
 
-macOS does not have a native "pin device" or "audio priority" setting. If you use external audio gear, you've almost certainly run into these daily frustrations:
+macOS does not offer a way to lock default audio input and output devices. When AirPods connect, the system automatically redirects the microphone to the headset. Connecting an external monitor or a dock often redirects audio output to monitor speakers unexpectedly.
 
-- 🎙️ **Microphone Hijacking**: You have a studio-grade USB/XLR microphone set up on your desk. The second you pop in your AirPods for listening, macOS ruthlessly switches your microphone to the AirPods — instantly degrading your voice into hollow, low-bandwidth Bluetooth phone quality.
-- 🔇 **External Monitor Takeover**: Plugging into an external monitor (HDMI/DisplayPort) or a Thunderbolt dock often causes macOS to direct all audio output to built-in monitor speakers that might not even produce sound.
-- 🔄 **Constant Manual Reverting**: macOS lacks memory for audio preference fallbacks. Every time you connect or disconnect a device, you find yourself digging through Control Center to fix it.
+SoundPin maintains priority lists for speakers, headphones, and microphones. Whenever a device connects or disconnects, or when macOS or another app changes the default device, SoundPin automatically switches back to the highest-ranked available device.
 
-**SoundPin** solves this permanently. It maintains ranked priority queues for **Speakers, Headphones, and Microphones**. Whenever a higher-priority device is connected, the app ensures it is selected — and if macOS or another application tries to switch away, SoundPin switches it right back within milliseconds.
+## Features
 
----
+- **Priority-based switching**: Automatically routes audio to the highest-ranked connected device, and restores it when changed by other apps.
+- **Separate headphone and speaker lists**: Routes to headphones when connected, and returns to desktop speakers when disconnected. Display audio (HDMI/DisplayPort) is filtered so it is never mistaken for headphones.
+- **Click to promote**: Clicking any connected device selects it immediately and moves it to the top of its priority list.
+- **Scroll wheel volume control**: Hover over the volume slider and scroll to adjust the volume.
+- **System-style panel**: Designed after the macOS Sound menu. The menu bar icon reflects volume level, mute state, and connected headphone models.
+- **Offline device memory**: Disconnected devices remain in the list with last-seen timestamps, allowing you to organize priorities ahead of time.
+- **Lightweight and private**: Driven by CoreAudio hardware event notifications with no polling. Requires no microphone recording permissions, makes no network requests, and collects no telemetry.
+- **Bilingual interface**: Supports English and Simplified Chinese, matching the system language by default.
 
-## ✨ Features
+## Installation
 
-- 🎯 **Priority-Based Auto-Switching**: Automatically routes audio to the highest-ranked available device. If the system or another app tampers with the default device, it is restored immediately.
-- 🎧 **Smart Headphone & Speaker Separation**:
-  - Connect headphones: audio routes to headphones smoothly.
-  - Disconnect headphones: audio cleanly reverts to your top-ranked desktop speakers.
-  - Monitors (HDMI/DisplayPort) are intelligently identified via hardware transport types and **never mistaken for headphones**.
-- 👆 **Click-to-Promote**: Clicking any active device in the menu bar panel immediately selects it and **promotes it to #1 priority** in its group.
-- 🎨 **macOS Native Aesthetics**: Designed to seamlessly match the macOS Control Center Sound panel, complete with dynamic menu bar icons indicating volume levels, mute status, and the current headphone model.
-- 🛡️ **Privacy-First & Lightweight**:
-  - **Zero Audio Permissions**: No microphone recording access required or requested.
-  - **Zero Network Activity**: No analytics, telemetry, or remote calls whatsoever.
-  - **Zero Polling Overhead**: Purely event-driven via low-level CoreAudio listeners.
-- 🌐 **Bilingual Support**: Built-in English and Simplified Chinese, following the macOS system language by default or customizable via settings.
+Compatible with Apple Silicon and Intel Macs running macOS 13 or later.
 
----
-
-## 🚀 Installation
-
-Compatible with all Apple Silicon Macs (M1 through M4 series) and Intel Macs running macOS 13 or later.
-
-### Option 1: Direct Download (Recommended)
+### Download
 
 1. Download the latest `.dmg` from [Releases](https://github.com/realruian/SoundPin/releases/latest).
-2. Open the disk image and drag `SoundPin` into your **Applications** folder.
-3. Launch the app. If macOS displays an unverified developer prompt on the first launch (since this open-source build is not notarized with an Apple Developer account), head to **System Settings > Privacy & Security** and click **Open Anyway**.
+2. Open the disk image and drag `SoundPin` into Applications.
+3. On first launch, if macOS warns that the developer cannot be verified, open System Settings > Privacy & Security and click Open Anyway. You can also remove the quarantine attribute via Terminal:
+   ```bash
+   xattr -dr com.apple.quarantine /Applications/SoundPin.app
+   ```
 
-> 💡 Alternatively, you can strip the Gatekeeper quarantine attribute via Terminal:
-> ```bash
-> xattr -dr com.apple.quarantine /Applications/SoundPin.app
-> ```
+**Upgrading from 2.1 or earlier (Audio Priority Bar)**:  
+The app was renamed to SoundPin in version 2.2 with a new bundle identifier. Remove the old `AudioPriorityBar` from Applications after installing. Settings and priority orders migrate automatically on first launch; Open at Login should be re-enabled from the menu.
 
-> 🔁 **Upgrading from 2.1 or earlier**: the app was called Audio Priority Bar then (renamed in 2.2). After installing, delete the old `AudioPriorityBar` from Applications. Your device order and settings carry over, and Open at Login has to be turned on again in the new app.
+### Build from source
 
-### Option 2: Build from Source
-
-Requires the Xcode Command Line Tools:
+Requires Xcode Command Line Tools:
 
 ```bash
 git clone https://github.com/realruian/SoundPin.git
@@ -83,83 +70,72 @@ cd SoundPin
 ./install.sh
 ```
 
-`install.sh` will compile a universal binary, install it to `/Applications/SoundPin.app`, and launch it.
+`install.sh` builds a universal binary, installs it to `/Applications/SoundPin.app`, and opens it.
 
----
+## Usage
 
-## 📖 Usage & Pro Tips
-
-SoundPin runs cleanly in the menu bar as a speaker icon:
+SoundPin runs in the menu bar as a speaker icon:
 
 | Action | Result |
 |---|---|
-| **Click a device** | Selects it and **promotes it to top priority** in its category |
-| **Drag a device** | Reorders priorities (top has highest precedence) |
-| **Device ⋯ menu** | Mark as "Never Select Automatically", "Ignore", or move between Headphones/Speakers |
-| **Panel Header ⋯ menu** | Toggle auto-switching, open at login, edit device list, switch language, or quit |
-| **Edit Device List** | Reveals offline/cached devices to organize priorities or remove obsolete entries |
-| **Sound Settings…** | Quick shortcut to the macOS Sound system settings |
+| Click a device | Selects it and moves it to the top of its category |
+| Drag a device | Reorders priorities |
+| Scroll on volume slider | Adjusts output volume |
+| Device ⋯ menu | Ignore device, never auto-select, or move between headphones and speakers |
+| Top-right ⋯ menu | Toggle auto-switching, open at login, edit device list, switch language, quit |
+| Edit Device List | Displays disconnected devices for reordering or removing |
+| Sound Settings… | Opens macOS Sound settings |
 
-> ⏸️ **Pausing Auto-Switch**: If you temporarily want full manual control, disable "Switch Devices Automatically" in the `⋯` menu. An orange pill will appear next to the title — click it anytime to resume.
+When automatic switching is paused, an "Auto-Switch Paused" indicator appears in the header. Click it to resume.
 
----
+## How it works
 
-## ⚙️ How It Works
+- **Device observation**: Uses CoreAudio C APIs (`AudioObjectAddPropertyListenerBlock`) to observe hardware changes and default device changes without polling.
+- **Persistent storage**: Priorities are saved by device hardware UID in local preferences (`io.github.realruian.SoundPin`), preserving order across reconnects and reboots.
+- **Device categorization**: Uses hardware transport types (`kAudioDevicePropertyTransportType`) and brand keywords to distinguish headphones from speakers.
 
-1. **Hardware Monitoring**: Directly leverages CoreAudio C APIs (`AudioObjectAddPropertyListenerBlock`) to track hardware registry changes, device plug/unplug events, and default device updates in real time.
-2. **Persistent UID Mapping**: Device priorities are stored against their hardware UIDs in the user defaults (`io.github.realruian.SoundPin`), persisting across restarts and disconnects.
-3. **Smart Heuristics**: Analyzes each device's `kAudioDevicePropertyTransportType` (USB, Bluetooth, HDMI, DisplayPort, Built-in) alongside a comprehensive brand keyword database to differentiate between headphones and speakers.
-
-Inspect local preferences via Terminal:
+Read local preferences:
 ```bash
 defaults read io.github.realruian.SoundPin
 ```
 
----
+## Known limitations
 
-## ⚠️ Known Limitations
+- **Less common Bluetooth headphones**: Earbuds not matching the built-in keyword database may land in the speakers list initially. Select "Move to Headphones" from the device menu to fix this permanently.
+- **AirPlay**: Disconnected AirPlay destinations do not appear in the list.
+- **Bluetooth pairing**: Manages already-connected audio devices and does not initiate Bluetooth discovery or connection.
 
-- **Niche Bluetooth Earbuds**: If an uncommon earbud brand is missing from the built-in acoustic keyword database, it might initially fall into the speakers list. Simply hover its `⋯` menu and click "Move to Headphones" once; your choice will be saved permanently.
-- **AirPlay**: AirPlay destinations that are not currently active will not appear in the list.
-- **Bluetooth Pairing**: This app manages routing among devices already connected to your Mac and does not initiate Bluetooth discovery or connection.
+## Uninstall
 
----
-
-## 🗑️ Uninstall
-
-Quit the application from the `⋯` menu, then run:
+Quit the app from the menu, then run:
 
 ```bash
 rm -rf /Applications/SoundPin.app
 defaults delete io.github.realruian.SoundPin
 ```
 
----
+## Development
 
-## 🛠️ Development & Tooling
+The repository includes helper scripts:
 
-The repository provides offline development and packaging tools:
+- `tools/render-preview.sh [output.png] [--demo] [--lang en|zh-Hans]`: Renders offline panel previews via SwiftUI without physical device changes.
+- `tools/check-devices.sh`: Tests device classification and icon rules against sample devices.
+- `tools/make-dmg.sh`: Builds a universal release binary and packages a DMG.
 
-- `tools/render-preview.sh [output.png] [--demo] [--lang en|zh-Hans]`: Renders high-resolution panel previews offline using SwiftUI view hosting without needing physical devices plugged in.
-- `tools/check-devices.sh`: Verifies grouping and icon mapping logic across common audio device signatures.
-- `tools/make-dmg.sh`: Generates a signed universal release DMG inside `dist/`.
+## Credits
 
----
+Based on [tobi/AudioPriorityBar](https://github.com/tobi/AudioPriorityBar). Versions up to 2.1 retained the original name; the project was renamed to SoundPin starting in version 2.2.
 
-## 🤝 Credits & Acknowledgments
+Changes from the original:
+- Redesigned interface following the macOS Sound menu;
+- Clicking a device selects and promotes it to the top (original ignored clicks during auto mode);
+- Scroll wheel support on the volume slider;
+- Native bilingual interface (English and Simplified Chinese);
+- Dynamic menu bar icon reflecting volume, mute, and headphone model;
+- Transport type filtering preventing HDMI and DisplayPort from being classified as headphones;
+- Offline device caching with recency timestamps;
+- Layout fixes for modern macOS releases.
 
-This project is an enhanced fork of [tobi/AudioPriorityBar](https://github.com/tobi/AudioPriorityBar). Special thanks to tobi for the original priority switching concept and CoreAudio design. Versions up to 2.1 kept the original name, Audio Priority Bar; from 2.2 the app is called SoundPin (定音 in Chinese).
+## License
 
-**Key enhancements in this fork**:
-- 🎨 **Complete UI Redesign**: Re-engineered from scratch to mirror the modern macOS Control Center Sound panel.
-- 👆 **Interactive Promotion**: Clicking an active device now directly switches to it and promotes it to #1 priority (the original ignored clicks while in auto mode).
-- 🌐 **Localization**: Added full bilingual support (English & Simplified Chinese) with automatic system language detection.
-- 🎧 **Dynamic Status Bar Icon**: Menu bar icon dynamically tracks volume tiers, mute status, and specific connected headphone models.
-- 🖥️ **Anti-False-Positive Filtering**: Integrated transport-type filters so HDMI/DisplayPort audio outputs are never incorrectly classified as headphones.
-- 🧩 **OS Compatibility**: Resolved panel collapse and layout rendering glitches on modern macOS releases.
-
----
-
-## 📄 License
-
-Distributed under the [MIT License](LICENSE).
+[MIT](LICENSE)
