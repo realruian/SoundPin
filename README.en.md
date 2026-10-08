@@ -42,6 +42,7 @@ SoundPin maintains priority lists for speakers, headphones, and microphones. Whe
 - **System-style panel**: Designed after the macOS Sound menu. The menu bar icon reflects volume level, mute state, and connected headphone models.
 - **Offline device memory**: Disconnected devices remain in the list with last-seen timestamps, allowing you to organize priorities ahead of time.
 - **Lightweight and private**: Driven by CoreAudio hardware event notifications with no polling. Requires no microphone recording permissions, makes no network requests, and collects no telemetry.
+- **Keyboard and VoiceOver support**: Full VoiceOver support for reading device states and actions, plus Tab/Space navigation on macOS 14+.
 - **Bilingual interface**: Supports English and Simplified Chinese, matching the system language by default.
 
 ## Installation
@@ -81,6 +82,7 @@ SoundPin runs in the menu bar as a speaker icon:
 | Click a device | Selects it and moves it to the top of its category |
 | Drag a device | Reorders priorities |
 | Scroll on volume slider | Adjusts output volume |
+| Keyboard (macOS 14+) | With Keyboard Navigation on, press Tab to focus and Space/Return to select |
 | Device ⋯ menu | Ignore device, never auto-select, or move between headphones and speakers |
 | Top-right ⋯ menu | Toggle auto-switching, open at login, edit device list, switch language, quit |
 | Edit Device List | Displays disconnected devices for reordering or removing |
@@ -120,6 +122,9 @@ The repository includes helper scripts:
 
 - `tools/render-preview.sh [output.png] [--demo] [--lang en|zh-Hans]`: Renders offline panel previews via SwiftUI without physical device changes.
 - `tools/check-devices.sh`: Tests device classification and icon rules against sample devices.
+- `tools/check-settings.sh`: Checks how devices are remembered and marked "never select automatically", in a settings domain of its own.
+- `tools/check-events.sh`: Checks that a burst of device notifications is handled once, using test devices only this process sees.
+- `tools/check-voiceover.sh [--lang en|zh-Hans]`: Reads the panel's accessibility information without turning VoiceOver on and runs one row action (the terminal needs Accessibility permission).
 - `tools/make-dmg.sh`: Builds a universal release binary and packages a DMG.
 
 ## Credits
@@ -134,6 +139,7 @@ Changes from the original:
 - Dynamic menu bar icon reflecting volume, mute, and headphone model;
 - Transport type filtering preventing HDMI and DisplayPort from being classified as headphones;
 - Offline device caching with recency timestamps;
+- Full VoiceOver and keyboard navigation support;
 - Layout fixes for modern macOS releases.
 
 ## License
