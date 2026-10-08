@@ -70,17 +70,54 @@ class PriorityManager {
             }
         }
         saveKnownDevices(known)
+        rememberScreens(among: devices)
     }
 
-    func getStoredDevice(uid: String) -> StoredDevice? {
-        getKnownDevices().first { $0.uid == uid }
+    /// Sets "last seen" to now for devices that have just been disconnected
+    func markLastSeen(uids: Set<String>) {
+        guard !uids.isEmpty else { return }
+        var known = getKnownDevices()
+        let now = Date()
+        for index in known.indices where uids.contains(known[index].uid) {
+            known[index].lastSeen = now
+        }
+        saveKnownDevices(known)
     }
 
+    /// What is remembered about this side of the device
+    func getStoredDevice(for device: AudioDevice) -> StoredDevice? {
+        let isInput = device.type == .input
+        return getKnownDevices().first { $0.uid == device.uid && $0.isInput == isInput }
+    }
+
+    /// Forgets the device and everything set for this side of it, so that it starts afresh
+    /// if it is ever connected again
     func forgetDevice(_ device: AudioDevice) {
         let isInput = device.type == .input
         var known = getKnownDevices()
         known.removeAll { $0.uid == device.uid && $0.isInput == isInput }
         saveKnownDevices(known)
+
+        let lists = isInput
+            ? [inputPrioritiesKey, hiddenMicsKey]
+            : [speakerPrioritiesKey, headphonePrioritiesKey, hiddenSpeakersKey, hiddenHeadphonesKey]
+        for key in lists {
+            guard var list = defaults.array(forKey: key) as? [String], list.contains(device.uid) else { continue }
+            list.removeAll { $0 == device.uid }
+            // An empty order is no order: the list is then seeded again like a new one
+            if list.isEmpty {
+                defaults.removeObject(forKey: key)
+            } else {
+                defaults.set(list, forKey: key)
+            }
+        }
+        if !isInput, var categories = defaults.dictionary(forKey: deviceCategoriesKey) as? [String: String],
+           categories.removeValue(forKey: device.uid) != nil {
+            defaults.set(categories, forKey: deviceCategoriesKey)
+        }
+        if isNeverUse(device) {
+            setNeverUse(device, neverUse: false)
+        }
     }
 
     private func saveKnownDevices(_ devices: [StoredDevice]) {
@@ -119,13 +156,32 @@ class PriorityManager {
         // Default headphone-like devices to headphone category
         if HeadphoneDetection.isHeadphone(deviceName: device.name) {
             // A screen's audio is never headphones, whatever its name matches
-            if let transport = device.transportType,
-               transport == kAudioDeviceTransportTypeDisplayPort || transport == kAudioDeviceTransportTypeHDMI {
-                return .speaker
-            }
-            return .headphone
+            return isScreen(device) ? .speaker : .headphone
         }
         return .speaker
+    }
+
+    /// Attached over DisplayPort or HDMI. Known only while the device is connected.
+    private func isScreen(_ device: AudioDevice) -> Bool {
+        guard let transport = device.transportType else { return false }
+        return transport == kAudioDeviceTransportTypeDisplayPort || transport == kAudioDeviceTransportTypeHDMI
+    }
+
+    /// A screen whose name reads like headphones is told apart by how it is attached, which
+    /// cannot be asked once it is disconnected. The answer is stored while it can be had,
+    /// so that the screen is listed with the speakers then too.
+    private func rememberScreens(among devices: [AudioDevice]) {
+        var categories = defaults.dictionary(forKey: deviceCategoriesKey) as? [String: String] ?? [:]
+        var changed = false
+        for device in devices where device.type == .output && categories[device.uid] == nil {
+            if HeadphoneDetection.isHeadphone(deviceName: device.name) && isScreen(device) {
+                categories[device.uid] = OutputCategory.speaker.rawValue
+                changed = true
+            }
+        }
+        if changed {
+            defaults.set(categories, forKey: deviceCategoriesKey)
+        }
     }
 
     func setCategory(_ category: OutputCategory, for device: AudioDevice) {
@@ -196,18 +252,15 @@ class PriorityManager {
         }
     }
 
+    /// Stops ignoring the device. An output is taken off both lists: it may have been
+    /// ignored in each, and would otherwise vanish again when moved to the other one.
     func unhideDevice(_ device: AudioDevice) {
-        let key = hiddenKey(for: device)
-        var hidden = defaults.array(forKey: key) as? [String] ?? []
-        hidden.removeAll { $0 == device.uid }
-        defaults.set(hidden, forKey: key)
-    }
-
-    func unhideDevice(_ device: AudioDevice, fromCategory category: OutputCategory) {
-        let key = category == .speaker ? hiddenSpeakersKey : hiddenHeadphonesKey
-        var hidden = defaults.array(forKey: key) as? [String] ?? []
-        hidden.removeAll { $0 == device.uid }
-        defaults.set(hidden, forKey: key)
+        let keys = device.type == .input ? [hiddenMicsKey] : [hiddenSpeakersKey, hiddenHeadphonesKey]
+        for key in keys {
+            guard var hidden = defaults.array(forKey: key) as? [String], hidden.contains(device.uid) else { continue }
+            hidden.removeAll { $0 == device.uid }
+            defaults.set(hidden, forKey: key)
+        }
     }
 
     private func hiddenKey(for device: AudioDevice) -> String {

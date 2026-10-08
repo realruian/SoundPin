@@ -137,7 +137,7 @@ struct DraggableDeviceRow: View {
 
     var lastSeenText: String? {
         guard isDisconnected,
-              let stored = audioManager.priorityManager.getStoredDevice(uid: device.uid) else {
+              let stored = audioManager.priorityManager.getStoredDevice(for: device) else {
             return nil
         }
         return stored.lastSeenRelative
@@ -204,8 +204,7 @@ struct DraggableDeviceRow: View {
         if isDisconnected {
             groups.append([
                 RowAction(title: L10n.forgetDevice, systemImage: "trash", isDestructive: true) {
-                    audioManager.priorityManager.forgetDevice(device)
-                    audioManager.refreshDevices()
+                    audioManager.forgetDevice(device)
                 },
             ])
         } else {

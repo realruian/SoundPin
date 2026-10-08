@@ -24,17 +24,27 @@ struct SoundPinApp: App {
 }
 
 /// Versions up to 2.1 were called Audio Priority Bar and kept their settings under another
-/// identifier. The first launch under the new name copies them over once.
+/// identifier (1.x under yet another). The first launch under the new name copies them over once.
 enum SettingsMigration {
-    private static let oldDomain = "app.audioprioritybar"
+    /// Newest first: the settings of the first one found are taken
+    private static let oldDomains = ["app.audioprioritybar", "com.example.AudioPriorityBar"]
     private static let doneKey = "migratedFromAudioPriorityBar"
+    /// The app's own settings. The old file also holds what the system kept there for the
+    /// old app, such as the place of its menu bar icon, which is not carried over.
+    private static let keys = [
+        "inputPriorities", "speakerPriorities", "headphonePriorities", "deviceCategories",
+        "currentMode", "customMode", "neverUseDevices",
+        "hiddenMics", "hiddenSpeakers", "hiddenHeadphones", "knownDevices", "appLanguage",
+    ]
 
     static func run() {
         let defaults = UserDefaults.standard
         guard !defaults.bool(forKey: doneKey) else { return }
-        if let old = defaults.persistentDomain(forName: oldDomain) {
-            for (key, value) in old where defaults.object(forKey: key) == nil {
-                defaults.set(value, forKey: key)
+        if let old = oldDomains.lazy.compactMap({ defaults.persistentDomain(forName: $0) }).first {
+            for key in keys where defaults.object(forKey: key) == nil {
+                if let value = old[key] {
+                    defaults.set(value, forKey: key)
+                }
             }
         }
         defaults.set(true, forKey: doneKey)
@@ -130,25 +140,44 @@ class AudioManager: ObservableObject {
         setupDeviceChangeListener()
         setupMuteVolumeListener()
         if !isCustomMode {
-            followOutputInUseAtLaunch()
-            autoSwitchModeIfNeeded(newlyConnectedUIDs: [])
-            applyHighestPriorityInput()
-            applyHighestPriorityOutput()
+            followOutputInUse()
+            pickAgain(.input)
+            pickAgain(.output)
         }
     }
 
-    /// The mode stored at the last quit can be out of date: headphones may have been put on
-    /// or taken off since. At launch, the list that holds the output in use is the one in
-    /// use. An output that is in neither list, or marked "never select automatically",
-    /// decides nothing, and the stored mode stands.
-    private func followOutputInUseAtLaunch() {
-        func holdsOutputInUse(_ list: [AudioDevice]) -> Bool {
-            list.contains { $0.isConnected && $0.id == currentOutputId && !priorityManager.isNeverUse($0) }
+    /// The mode on record can be out of date: headphones may have been put on or taken off
+    /// while the app was not running, or while automatic switching was paused. When the app
+    /// starts picking devices, the list that holds the output in use is the one in use. An
+    /// output the app would not pick by itself decides nothing, and the mode on record stands.
+    private func followOutputInUse() {
+        func holdsOutputInUse(_ list: [AudioDevice], _ category: OutputCategory) -> Bool {
+            list.contains { $0.id == currentOutputId && canPickAutomatically($0, in: category) }
         }
-        if holdsOutputInUse(headphoneDevices) {
+        if holdsOutputInUse(headphoneDevices, .headphone) {
             switchMode(to: .headphone)
-        } else if holdsOutputInUse(speakerDevices) {
+        } else if holdsOutputInUse(speakerDevices, .speaker) {
             switchMode(to: .speaker)
+        }
+    }
+
+    /// Whether the app may pick this device by itself: it is connected, not ignored in the
+    /// list it is shown in, and not marked "never select automatically". Being listed is
+    /// not enough: while the device list is edited, the lists hold ignored devices too.
+    private func canPickAutomatically(_ device: AudioDevice, in category: OutputCategory?) -> Bool {
+        device.isConnected && !priorityManager.isNeverUse(device) && !isDeviceIgnored(device, inCategory: category)
+    }
+
+    /// Picks by priority again after a change to the lists; `connected` names devices that
+    /// have just become available. Does nothing while automatic switching is paused.
+    private func pickAgain(_ type: AudioDeviceType, connected: Set<String> = []) {
+        guard !isCustomMode else { return }
+        switch type {
+        case .input:
+            applyHighestPriorityInput()
+        case .output:
+            autoSwitchModeIfNeeded(newlyConnectedUIDs: connected)
+            applyHighestPriorityOutput()
         }
     }
 
@@ -238,21 +267,15 @@ class AudioManager: ObservableObject {
     /// Tracks device UIDs from the previous refresh to detect new connections
     private var previousConnectedUIDs: Set<String> = []
     
-    func setMode(_ mode: OutputCategory) {
-        currentMode = mode
-        priorityManager.currentMode = mode
-        if !isCustomMode {
-            applyHighestPriorityOutput()
-        }
-    }
-
     func setCustomMode(_ enabled: Bool) {
         handPickedUIDs = [:]
         isCustomMode = enabled
         priorityManager.isCustomMode = enabled
         if !enabled {
-            applyHighestPriorityInput()
-            applyHighestPriorityOutput()
+            // The mode was not kept up while paused
+            followOutputInUse()
+            pickAgain(.input)
+            pickAgain(.output)
         }
     }
 
@@ -265,8 +288,7 @@ class AudioManager: ObservableObject {
         if category != previous {
             followCategoryChange(of: device, to: category, wasInUse: wasInUse)
         }
-        autoSwitchModeIfNeeded(newlyConnectedUIDs: [])
-        applyHighestPriorityOutput()
+        pickAgain(.output)
     }
 
     /// A connected device that changes lists takes the mode with it, so that telling the
@@ -284,7 +306,7 @@ class AudioManager: ObservableObject {
                     moveSpeakerDevice(from: IndexSet(integer: index), to: 0)
                 }
             }
-        } else if category == .headphone, !priorityManager.isNeverUse(list[index]) {
+        } else if category == .headphone, canPickAutomatically(list[index], in: .headphone) {
             // The same as headphones that have just been connected
             handPickedUIDs[.output] = nil
             switchMode(to: .headphone)
@@ -300,33 +322,21 @@ class AudioManager: ObservableObject {
             priorityManager.hideDevice(device)
         }
         refreshDevices()
-        if !isCustomMode {
-            if device.type == .input {
-                applyHighestPriorityInput()
-            } else {
-                applyHighestPriorityOutput()
-            }
-        }
+        pickAgain(device.type)
     }
 
     func hideDeviceEntirely(_ device: AudioDevice) {
         priorityManager.hideDevice(device, inCategory: .speaker)
         priorityManager.hideDevice(device, inCategory: .headphone)
         refreshDevices()
-        if !isCustomMode {
-            applyHighestPriorityOutput()
-        }
+        pickAgain(.output)
     }
 
-    func unhideDevice(_ device: AudioDevice, category: OutputCategory? = nil) {
-        if device.type == .input {
-            priorityManager.unhideDevice(device)
-        } else if let cat = category {
-            priorityManager.unhideDevice(device, fromCategory: cat)
-        } else {
-            priorityManager.unhideDevice(device)
-        }
+    func unhideDevice(_ device: AudioDevice) {
+        priorityManager.unhideDevice(device)
         refreshDevices()
+        // A device that is listed again is picked if it ranks first, like one just connected
+        pickAgain(device.type, connected: [device.uid])
     }
 
     func isDeviceIgnored(_ device: AudioDevice, inCategory category: OutputCategory? = nil) -> Bool {
@@ -346,13 +356,12 @@ class AudioManager: ObservableObject {
     func setNeverUse(_ device: AudioDevice, neverUse: Bool) {
         priorityManager.setNeverUse(device, neverUse: neverUse)
         refreshDevices()
-        if !isCustomMode {
-            if device.type == .input {
-                applyHighestPriorityInput()
-            } else {
-                applyHighestPriorityOutput()
-            }
-        }
+        pickAgain(device.type)
+    }
+
+    func forgetDevice(_ device: AudioDevice) {
+        priorityManager.forgetDevice(device)
+        refreshDevices()
     }
 
     func moveInputDevice(from source: IndexSet, to destination: Int) {
@@ -360,7 +369,7 @@ class AudioManager: ObservableObject {
         inputDevices.move(fromOffsets: source, toOffset: destination)
         priorityManager.savePriorities(inputDevices, moved: moved, type: .input)
         // Switch to top input if it's connected
-        if let topInput = deviceToUseAfterMove(in: inputDevices, type: .input) {
+        if let topInput = deviceToUseAfterMove(in: inputDevices, category: nil) {
             applyInputDevice(topInput)
         }
     }
@@ -370,7 +379,7 @@ class AudioManager: ObservableObject {
         speakerDevices.move(fromOffsets: source, toOffset: destination)
         priorityManager.savePriorities(speakerDevices, moved: moved, category: .speaker)
         // Switch to top speaker only if we're in speaker mode and top speaker is connected
-        if currentMode == .speaker, let topSpeaker = deviceToUseAfterMove(in: speakerDevices, type: .output) {
+        if currentMode == .speaker, let topSpeaker = deviceToUseAfterMove(in: speakerDevices, category: .speaker) {
             applyOutputDevice(topSpeaker)
         }
     }
@@ -379,8 +388,8 @@ class AudioManager: ObservableObject {
         guard let moved = devices(at: source, movingTo: destination, in: headphoneDevices) else { return }
         headphoneDevices.move(fromOffsets: source, toOffset: destination)
         priorityManager.savePriorities(headphoneDevices, moved: moved, category: .headphone)
-        // Switch to top headphone if it's connected
-        if let topHeadphone = deviceToUseAfterMove(in: headphoneDevices, type: .output) {
+        // Switch to top headphone only if we're in headphone mode and it's connected
+        if currentMode == .headphone, let topHeadphone = deviceToUseAfterMove(in: headphoneDevices, category: .headphone) {
             applyOutputDevice(topHeadphone)
         }
     }
@@ -391,14 +400,20 @@ class AudioManager: ObservableObject {
         return source.map { list[$0] }
     }
 
-    /// Reordering puts the top of the list to use if it is connected. Devices marked "never
-    /// select automatically" are passed over, and a device picked by hand stays in use.
-    private func deviceToUseAfterMove(in list: [AudioDevice], type: AudioDeviceType) -> AudioDevice? {
-        guard !isKeepingHandPick(type),
-              let top = list.first(where: { !priorityManager.isNeverUse($0) }), top.isConnected else {
-            return nil
+    /// Reordering a list puts to use the first device in it that the app may pick by itself.
+    /// A device picked by hand stays in use, and nothing changes while automatic switching
+    /// is paused. `category` is nil for the microphones.
+    private func deviceToUseAfterMove(in list: [AudioDevice], category: OutputCategory?) -> AudioDevice? {
+        guard !isCustomMode, !isKeepingHandPick(category == nil ? .input : .output) else { return nil }
+        return list.first { canPickAutomatically($0, in: category) }
+    }
+
+    /// Picks an output by hand; its list becomes the one in use
+    func selectOutputDevice(_ device: AudioDevice, in category: OutputCategory) {
+        if !isCustomMode {
+            switchMode(to: category)
         }
-        return top
+        setOutputDevice(device)
     }
 
     func setInputDevice(_ device: AudioDevice) {
@@ -430,17 +445,18 @@ class AudioManager: ObservableObject {
         return false
     }
 
-    // A device that is already the default is left alone
+    // A device that is already the default is left alone, and one that the system refuses
+    // is not shown as the device in use
     private func applyInputDevice(_ device: AudioDevice) {
         if deviceService.getCurrentDefaultDevice(type: .input) != device.id {
-            deviceService.setDefaultDevice(device.id, type: .input)
+            guard deviceService.setDefaultDevice(device.id, type: .input) else { return }
         }
         currentInputId = device.id
     }
 
     private func applyOutputDevice(_ device: AudioDevice) {
         if deviceService.getCurrentDefaultDevice(type: .output) != device.id {
-            deviceService.setDefaultDevice(device.id, type: .output)
+            guard deviceService.setDefaultDevice(device.id, type: .output) else { return }
         }
         currentOutputId = device.id
         // The slider shows the volume of the output in use
@@ -449,15 +465,15 @@ class AudioManager: ObservableObject {
 
     private func applyHighestPriorityInput() {
         guard !isKeepingHandPick(.input) else { return }
-        if let first = inputDevices.first(where: { $0.isConnected && !priorityManager.isNeverUse($0) }) {
+        if let first = inputDevices.first(where: { canPickAutomatically($0, in: nil) }) {
             applyInputDevice(first)
         }
     }
 
     private func applyHighestPriorityOutput() {
-        let devices = activeOutputDevices
+        let mode = currentMode
         if !isKeepingHandPick(.output),
-           let first = devices.first(where: { $0.isConnected && !priorityManager.isNeverUse($0) }) {
+           let first = activeOutputDevices.first(where: { canPickAutomatically($0, in: mode) }) {
             applyOutputDevice(first)
         }
         refreshMuteStatus()
@@ -477,28 +493,27 @@ class AudioManager: ObservableObject {
         refreshDevices()
         refreshMuteStatus()
         refreshVolume()
-        
+
         // Detect newly connected devices
         let newlyConnectedUIDs = connectedDeviceUIDs.subtracting(oldConnectedUIDs)
         previousConnectedUIDs = connectedDeviceUIDs
-        
-        if !isCustomMode {
-            // Auto-switch mode only when a new headphone connects or all headphones disconnect
-            autoSwitchModeIfNeeded(newlyConnectedUIDs: newlyConnectedUIDs)
-            applyHighestPriorityInput()
-            applyHighestPriorityOutput()
-        }
+        // "Last seen" is when a device went away, not when the list was last read with it in it
+        priorityManager.markLastSeen(uids: oldConnectedUIDs.subtracting(connectedDeviceUIDs))
+
+        // Auto-switch mode only when a new headphone connects or all headphones disconnect
+        pickAgain(.input)
+        pickAgain(.output, connected: newlyConnectedUIDs)
     }
-    
+
     /// Automatically switches between headphone and speaker mode based on device connections.
     /// Only triggers on:
     /// 1. A new headphone device connects → switch to headphone mode
     /// 2. All headphones disconnect → switch to speaker mode
     private func autoSwitchModeIfNeeded(newlyConnectedUIDs: Set<String>) {
-        // Devices marked "never select automatically" do not count: connecting one changes nothing
-        let connectedHeadphones = headphoneDevices.filter { $0.isConnected && !priorityManager.isNeverUse($0) }
+        // Only devices the app may pick count: connecting one marked "never select automatically" changes nothing
+        let connectedHeadphones = headphoneDevices.filter { canPickAutomatically($0, in: .headphone) }
         let hasConnectedHeadphones = !connectedHeadphones.isEmpty
-        let hasConnectedSpeakers = speakerDevices.contains { $0.isConnected && !priorityManager.isNeverUse($0) }
+        let hasConnectedSpeakers = speakerDevices.contains { canPickAutomatically($0, in: .speaker) }
         
         // Check if a new headphone just connected
         let newHeadphoneConnected = connectedHeadphones.contains { newlyConnectedUIDs.contains($0.uid) }

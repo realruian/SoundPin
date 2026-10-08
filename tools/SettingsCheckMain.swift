@@ -110,6 +110,52 @@ import Foundation
         check("a list that has an order is not seeded again",
               (defaults.array(forKey: "speakerPriorities") as? [String]) ?? [] == ["laptop", "monitor"])
 
+        print("Ignoring and forgetting")
+        let dac = AudioDevice(id: 95, uid: "dac", name: "USB DAC", type: .output)
+        let dacMic = AudioDevice(id: 95, uid: "dac", name: "USB DAC", type: .input)
+        pm.hideDevice(dac, inCategory: .speaker)
+        pm.hideDevice(dac, inCategory: .headphone)
+        pm.hideDevice(dacMic)
+        pm.unhideDevice(dac)
+        check("an output ignored in both lists is back in both",
+              !pm.isHidden(dac, inCategory: .speaker) && !pm.isHidden(dac, inCategory: .headphone))
+        check("its microphone is still ignored", pm.isHidden(dacMic))
+        pm.unhideDevice(dacMic)
+        check("until that is stopped too", !pm.isHidden(dacMic))
+
+        pm.rememberDevices([dac, dacMic, laptop])
+        defaults.set(["laptop", "dac"], forKey: "speakerPriorities")
+        defaults.set(["dac"], forKey: "headphonePriorities")
+        defaults.set(["dac", "built-in"], forKey: "inputPriorities")
+        pm.setCategory(.headphone, for: dac)
+        pm.hideDevice(dac, inCategory: .headphone)
+        pm.setNeverUse(dac, neverUse: true)
+        pm.setNeverUse(dacMic, neverUse: true)
+        pm.forgetDevice(dac)
+        check("a forgotten output is no longer known", pm.getStoredDevice(for: dac) == nil)
+        check("its microphone is still known", pm.getStoredDevice(for: dacMic) != nil)
+        check("it has left the speaker order", (defaults.array(forKey: "speakerPriorities") as? [String]) ?? [] == ["laptop"])
+        check("an order it was alone in is no order any more", defaults.object(forKey: "headphonePriorities") == nil)
+        check("its list, ignoring and marking are forgotten",
+              (defaults.dictionary(forKey: "deviceCategories") as? [String: String])?["dac"] == nil
+                && !pm.isHidden(dac, inCategory: .headphone) && !pm.isNeverUse(dac))
+        check("what was set for its microphone stays",
+              pm.isNeverUse(dacMic) && (defaults.array(forKey: "inputPriorities") as? [String])?.contains("dac") == true)
+
+        print("Last seen")
+        let longAgo = Date(timeIntervalSinceNow: -8 * 3600)
+        if var entries = try? JSONDecoder().decode([StoredDevice].self, from: defaults.data(forKey: "knownDevices") ?? Data()) {
+            for index in entries.indices { entries[index].lastSeen = longAgo }
+            defaults.set(try? JSONEncoder().encode(entries), forKey: "knownDevices")
+        }
+        check("a device last read hours ago shows as seen hours ago",
+              pm.getStoredDevice(for: laptop).map { Date().timeIntervalSince($0.lastSeen) > 7 * 3600 } ?? false)
+        pm.markLastSeen(uids: ["laptop"])
+        check("once it is disconnected, it was last seen now",
+              pm.getStoredDevice(for: laptop).map { Date().timeIntervalSince($0.lastSeen) < 60 } ?? false)
+        check("other devices keep their time",
+              pm.getStoredDevice(for: dacMic).map { Date().timeIntervalSince($0.lastSeen) > 7 * 3600 } ?? false)
+
         print(failures == 0 ? "\nAll checks passed." : "\n\(failures) check(s) failed.")
         exit(failures == 0 ? 0 : 1)
     }

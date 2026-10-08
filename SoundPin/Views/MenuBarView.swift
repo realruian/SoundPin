@@ -32,12 +32,7 @@ struct MenuBarView: View {
                             devices: audioManager.headphoneDevices,
                             currentDeviceId: audioManager.currentOutputId,
                             onMove: audioManager.moveHeadphoneDevice,
-                            onSelect: { device in
-                                if !audioManager.isCustomMode {
-                                    audioManager.setMode(.headphone)
-                                }
-                                audioManager.setOutputDevice(device)
-                            },
+                            onSelect: { audioManager.selectOutputDevice($0, in: .headphone) },
                             onHide: { audioManager.hideDevice($0, category: .headphone) },
                             category: .headphone,
                             showCategoryPicker: true
@@ -49,12 +44,7 @@ struct MenuBarView: View {
                         devices: audioManager.speakerDevices,
                         currentDeviceId: audioManager.currentOutputId,
                         onMove: audioManager.moveSpeakerDevice,
-                        onSelect: { device in
-                            if !audioManager.isCustomMode {
-                                audioManager.setMode(.speaker)
-                            }
-                            audioManager.setOutputDevice(device)
-                        },
+                        onSelect: { audioManager.selectOutputDevice($0, in: .speaker) },
                         onHide: { audioManager.hideDevice($0, category: .speaker) },
                         category: .speaker,
                         showCategoryPicker: true

@@ -86,7 +86,9 @@ class AudioDeviceService {
         return status == noErr ? deviceId : nil
     }
 
-    func setDefaultDevice(_ deviceId: AudioObjectID, type: AudioDeviceType) {
+    /// False when the system did not accept the device
+    @discardableResult
+    func setDefaultDevice(_ deviceId: AudioObjectID, type: AudioDeviceType) -> Bool {
         let selector: AudioObjectPropertySelector = type == .input
             ? kAudioHardwarePropertyDefaultInputDevice
             : kAudioHardwarePropertyDefaultOutputDevice
@@ -100,7 +102,7 @@ class AudioDeviceService {
         var mutableDeviceId = deviceId
         let dataSize = UInt32(MemoryLayout<AudioObjectID>.size)
 
-        AudioObjectSetPropertyData(
+        let status = AudioObjectSetPropertyData(
             AudioObjectID(kAudioObjectSystemObject),
             &propertyAddress,
             0,
@@ -108,6 +110,7 @@ class AudioDeviceService {
             dataSize,
             &mutableDeviceId
         )
+        return status == noErr
     }
 
     func getOutputVolume() -> Float {
