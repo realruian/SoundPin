@@ -41,14 +41,23 @@ Audio Priority Bar keeps a ranked list for speakers, headphones and microphones,
 
 ## Install
 
-There is no prebuilt download yet, so the app is built from source.
+Runs on Apple silicon and Intel Macs with macOS 13 or later (developed and tested on macOS 27).
 
-**Requirements**
+### Download
 
-- macOS 13 or later (developed and tested on macOS 27)
-- Xcode
+1. Get the latest `.dmg` from [Releases](https://github.com/realruian/AudioPriorityBar/releases/latest).
+2. Open it and drag AudioPriorityBar onto Applications.
+3. On first launch macOS says it cannot verify the developer, because the download is not notarized by Apple. Open System Settings > Privacy & Security and click Open Anyway near the bottom.
 
-**Steps**
+Instead of step 3, this command in Terminal does the same:
+
+```bash
+xattr -dr com.apple.quarantine /Applications/AudioPriorityBar.app
+```
+
+### Build from source
+
+Requires Xcode. A build made on your own Mac is not blocked by the system.
 
 ```bash
 git clone https://github.com/realruian/AudioPriorityBar.git
@@ -110,6 +119,8 @@ The menu bar panel cannot be captured from outside, so the repository carries tw
 
 - `tools/render-preview.sh [output.png] [--manual-look] [--edit-look] [--demo]` renders the panel to an image. It does not change the audio devices.
 - `tools/check-devices.sh` prints which list and which icon a table of sample devices gets.
+
+The download is made by `tools/make-dmg.sh`, which builds a universal app and packs it into a `.dmg` under `dist/`.
 
 ## Credits
 

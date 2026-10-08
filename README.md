@@ -40,14 +40,23 @@ Audio Priority Bar 给扬声器、耳机、麦克风各排一个优先级，始�
 
 ## 安装
 
-目前没有预编译的安装包，需要从源码构建。
+支持 Apple 芯片和 Intel 的 Mac，需要 macOS 13 或更高版本（在 macOS 27 上开发和测试）。
 
-**环境要求**
+### 下载安装包
 
-- macOS 13 或更高版本（在 macOS 27 上开发和测试）
-- Xcode
+1. 到 [Releases](https://github.com/realruian/AudioPriorityBar/releases/latest) 下载最新的 `.dmg` 文件。
+2. 打开它，把 AudioPriorityBar 拖进"应用程序"。
+3. 第一次打开时，macOS 会提示无法验证开发者，因为安装包没有做苹果公证。到"系统设置 → 隐私与安全性"，在页面下方点"仍要打开"。
 
-**步骤**
+第 3 步也可以换成在终端里运行下面这条命令，效果相同：
+
+```bash
+xattr -dr com.apple.quarantine /Applications/AudioPriorityBar.app
+```
+
+### 从源码构建
+
+需要 Xcode。从源码构建的版本不会被系统拦截。
 
 ```bash
 git clone https://github.com/realruian/AudioPriorityBar.git
@@ -109,6 +118,8 @@ defaults delete app.audioprioritybar
 
 - `tools/render-preview.sh [输出.png] [--manual-look] [--edit-look] [--demo]`：把面板离线渲染成图片。不会改动音频设备。
 - `tools/check-devices.sh`：打印一组样例设备分别落在哪个组、用哪个图标。
+
+发布用的安装包由 `tools/make-dmg.sh` 生成，它会构建通用版本并打包成 `dist/` 下的 `.dmg`。
 
 ## 致谢
 
