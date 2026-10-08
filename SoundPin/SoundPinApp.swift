@@ -40,59 +40,6 @@ enum SettingsMigration {
     }
 }
 
-struct MenuBarLabel: View {
-    let volume: Float
-    let isOutputMuted: Bool
-    let isInputMuted: Bool
-    let isCustomMode: Bool
-    let mode: OutputCategory
-    let micFlash: Bool
-
-    var body: some View {
-        HStack(spacing: 2) {
-            if isInputMuted {
-                Image(systemName: micFlash ? "mic.fill" : "mic.slash.fill")
-            }
-            if isCustomMode {
-                Image(systemName: "hand.raised.fill")
-            } else if mode == .headphone {
-                Image(systemName: "headphones")
-            }
-            if isOutputMuted {
-                Image(systemName: "speaker.slash.fill")
-            } else {
-                Image(systemName: "speaker.wave.3.fill", variableValue: Double(volume))
-            }
-        }
-    }
-}
-
-struct VolumeMeterView: View {
-    let volume: Float
-    let isMuted: Bool
-    private let barCount = 4
-    private let barSpacing: CGFloat = 1
-
-    var body: some View {
-        Canvas { context, size in
-            let barWidth = (size.width - CGFloat(barCount - 1) * barSpacing) / CGFloat(barCount)
-            let filledBars = isMuted ? 0 : Int(ceil(Double(volume) * Double(barCount)))
-            for i in 0..<barCount {
-                let x = CGFloat(i) * (barWidth + barSpacing)
-                let barHeight = size.height * CGFloat(i + 1) / CGFloat(barCount)
-                let y = size.height - barHeight
-                let rect = CGRect(x: x, y: y, width: barWidth, height: barHeight)
-                let path = Path(roundedRect: rect, cornerRadius: 1)
-                if i < filledBars {
-                    context.fill(path, with: .color(isMuted ? .red : .primary))
-                } else {
-                    context.fill(path, with: .color(.primary.opacity(0.25)))
-                }
-            }
-        }
-    }
-}
-
 @MainActor
 class AudioManager: ObservableObject {
     @Published var inputDevices: [AudioDevice] = []
@@ -110,20 +57,14 @@ class AudioManager: ObservableObject {
     @Published var mutedDeviceIds: Set<AudioObjectID> = []
     @Published var isActiveOutputMuted: Bool = false
     @Published var isActiveInputMuted: Bool = false
-    @Published var micFlashState: Bool = false
     /// Published so that every view redraws its text when the language changes
     @Published var language: AppLanguage = L10n.setting {
         didSet { L10n.setting = language }
     }
 
     private let deviceService = AudioDeviceService()
-    private var micFlashTimer: Timer?
     let priorityManager = PriorityManager()
     private var connectedDeviceUIDs: Set<String> = []
-
-    var menuBarIcon: String {
-        currentMode.icon
-    }
 
     /// Symbol for the menu bar, following what the system Sound icon shows:
     /// the headphones in use, a slashed speaker when muted, otherwise waves by volume
@@ -168,17 +109,6 @@ class AudioManager: ObservableObject {
             isActiveInputMuted = muted.contains(inputId)
         } else {
             isActiveInputMuted = false
-        }
-        if isActiveInputMuted && micFlashTimer == nil {
-            micFlashTimer = Timer.scheduledTimer(withTimeInterval: 0.7, repeats: true) { [weak self] _ in
-                Task { @MainActor in
-                    self?.micFlashState.toggle()
-                }
-            }
-        } else if !isActiveInputMuted && micFlashTimer != nil {
-            micFlashTimer?.invalidate()
-            micFlashTimer = nil
-            micFlashState = false
         }
     }
 
@@ -229,9 +159,7 @@ class AudioManager: ObservableObject {
     func refreshDevices() {
         let allConnectedDevices = deviceService.getDevices()
         connectedDeviceUIDs = Set(allConnectedDevices.map { $0.uid })
-        for device in allConnectedDevices {
-            priorityManager.rememberDevice(device.uid, name: device.name, isInput: device.type == .input)
-        }
+        priorityManager.rememberDevices(allConnectedDevices)
         let connectedInputs = allConnectedDevices.filter { $0.type == .input }
         let connectedOutputs = allConnectedDevices.filter { $0.type == .output }
 
@@ -425,13 +353,18 @@ class AudioManager: ObservableObject {
         applyOutputDevice(device)
     }
 
+    // A device that is already the default is left alone
     private func applyInputDevice(_ device: AudioDevice) {
-        deviceService.setDefaultDevice(device.id, type: .input)
+        if deviceService.getCurrentDefaultDevice(type: .input) != device.id {
+            deviceService.setDefaultDevice(device.id, type: .input)
+        }
         currentInputId = device.id
     }
 
     private func applyOutputDevice(_ device: AudioDevice) {
-        deviceService.setDefaultDevice(device.id, type: .output)
+        if deviceService.getCurrentDefaultDevice(type: .output) != device.id {
+            deviceService.setDefaultDevice(device.id, type: .output)
+        }
         currentOutputId = device.id
     }
 

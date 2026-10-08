@@ -9,6 +9,10 @@ class AudioDeviceService {
     private var listenerBlock: AudioObjectPropertyListenerBlock?
     private var muteVolumeListenerBlock: AudioObjectPropertyListenerBlock?
     private var monitoredDeviceIds: Set<AudioObjectID> = []
+    private var pendingDeviceChange: DispatchWorkItem?
+    /// One plug or unplug arrives as several notifications in a row (device list, default
+    /// input, default output). They are handled once, after they have stopped coming.
+    private let deviceChangeDelay: TimeInterval = 0.1
 
     func getDevices() -> [AudioDevice] {
         var propertyAddress = AudioObjectPropertyAddress(
@@ -236,9 +240,7 @@ class AudioDeviceService {
         )
 
         listenerBlock = { [weak self] _, _ in
-            self?.onDevicesChanged?()
-            // Re-register mute/volume listeners when devices change
-            self?.updateMuteVolumeListeners()
+            self?.scheduleDeviceChange()
         }
 
         AudioObjectAddPropertyListenerBlock(
@@ -275,6 +277,20 @@ class AudioDeviceService {
 
         // Initial setup of mute/volume listeners
         updateMuteVolumeListeners()
+    }
+
+    // Called on the main queue, like the listener blocks
+    private func scheduleDeviceChange() {
+        pendingDeviceChange?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            self.pendingDeviceChange = nil
+            self.onDevicesChanged?()
+            // Re-register mute/volume listeners when devices change
+            self.updateMuteVolumeListeners()
+        }
+        pendingDeviceChange = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + deviceChangeDelay, execute: work)
     }
 
     func updateMuteVolumeListeners() {
@@ -386,6 +402,9 @@ class AudioDeviceService {
     }
 
     func stopListening() {
+        pendingDeviceChange?.cancel()
+        pendingDeviceChange = nil
+
         // Remove mute/volume listeners first
         removeMuteVolumeListeners()
 

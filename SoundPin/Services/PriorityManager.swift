@@ -54,14 +54,19 @@ class PriorityManager {
         return devices
     }
 
-    func rememberDevice(_ uid: String, name: String, isInput: Bool) {
+    /// Records all connected devices in one pass, so the list is read and written once per refresh
+    func rememberDevices(_ devices: [AudioDevice]) {
+        guard !devices.isEmpty else { return }
         var known = getKnownDevices()
         let now = Date()
-        if let index = known.firstIndex(where: { $0.uid == uid }) {
-            // Update name and lastSeen
-            known[index] = StoredDevice(uid: uid, name: name, isInput: isInput, lastSeen: now)
-        } else {
-            known.append(StoredDevice(uid: uid, name: name, isInput: isInput, lastSeen: now))
+        for device in devices {
+            let stored = StoredDevice(uid: device.uid, name: device.name, isInput: device.type == .input, lastSeen: now)
+            if let index = known.firstIndex(where: { $0.uid == device.uid }) {
+                // Update name and lastSeen
+                known[index] = stored
+            } else {
+                known.append(stored)
+            }
         }
         saveKnownDevices(known)
     }

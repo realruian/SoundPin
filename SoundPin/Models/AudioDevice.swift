@@ -10,13 +10,6 @@ enum OutputCategory: String, Codable, CaseIterable {
     case speaker
     case headphone
 
-    var icon: String {
-        switch self {
-        case .speaker: return "speaker.wave.2.fill"
-        case .headphone: return "headphones"
-        }
-    }
-
     var label: String {
         switch self {
         case .speaker: return L10n.speakers
