@@ -2,52 +2,30 @@ import SwiftUI
 import CoreAudio
 import AppKit
 
+// Laid out after the macOS Sound menu: title, volume slider, device rows with round icons.
 struct MenuBarView: View {
     @EnvironmentObject var audioManager: AudioManager
+    @State private var deviceListHeight: CGFloat = 0
 
     var body: some View {
-        VStack(spacing: 0) {
-            // Header with mode toggle and volume
-            VStack(spacing: 14) {
-                ModeToggleView()
-                VolumeSliderView()
-            }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 14)
-            .background(Color.primary.opacity(0.02))
+        VStack(alignment: .leading, spacing: 0) {
+            PanelHeaderView()
+                .padding(.horizontal, 14)
+                .padding(.top, 12)
 
-            Divider()
-                .padding(.horizontal, 12)
+            VolumeSliderView()
+                .padding(.horizontal, 14)
+                .padding(.top, 8)
+                .padding(.bottom, 12)
+
+            PanelDivider()
 
             ScrollView {
-                VStack(spacing: 20) {
-                    // Speakers (show in speaker mode or custom mode)
-                    if audioManager.currentMode == .speaker || audioManager.isCustomMode {
+                VStack(alignment: .leading, spacing: 0) {
+                    // Headphones are listed only when there are some (or while editing)
+                    if !audioManager.headphoneDevices.isEmpty || audioManager.isEditMode {
                         DeviceSectionView(
-                            title: "Speakers",
-                            icon: "speaker.wave.2.fill",
-                            devices: audioManager.speakerDevices,
-                            currentDeviceId: audioManager.currentOutputId,
-                            onMove: audioManager.moveSpeakerDevice,
-                            onSelect: { device in
-                                if !audioManager.isCustomMode {
-                                    audioManager.setMode(.speaker)
-                                }
-                                audioManager.setOutputDevice(device)
-                            },
-                            onHide: { audioManager.hideDevice($0, category: .speaker) },
-                            onUnhide: { audioManager.unhideDevice($0, category: .speaker) },
-                            category: .speaker,
-                            showCategoryPicker: true,
-                            isActiveCategory: audioManager.currentMode == .speaker || audioManager.isCustomMode
-                        )
-                    }
-
-                    // Headphones (show in headphone mode or custom mode)
-                    if audioManager.currentMode == .headphone || audioManager.isCustomMode {
-                        DeviceSectionView(
-                            title: "Headphones",
-                            icon: "headphones",
+                            title: "耳机",
                             devices: audioManager.headphoneDevices,
                             currentDeviceId: audioManager.currentOutputId,
                             onMove: audioManager.moveHeadphoneDevice,
@@ -60,15 +38,32 @@ struct MenuBarView: View {
                             onHide: { audioManager.hideDevice($0, category: .headphone) },
                             onUnhide: { audioManager.unhideDevice($0, category: .headphone) },
                             category: .headphone,
-                            showCategoryPicker: true,
-                            isActiveCategory: audioManager.currentMode == .headphone || audioManager.isCustomMode
+                            showCategoryPicker: true
                         )
                     }
 
-                    // Microphones (always shown, at the bottom)
                     DeviceSectionView(
-                        title: "Microphones",
-                        icon: "mic.fill",
+                        title: "扬声器",
+                        devices: audioManager.speakerDevices,
+                        currentDeviceId: audioManager.currentOutputId,
+                        onMove: audioManager.moveSpeakerDevice,
+                        onSelect: { device in
+                            if !audioManager.isCustomMode {
+                                audioManager.setMode(.speaker)
+                            }
+                            audioManager.setOutputDevice(device)
+                        },
+                        onHide: { audioManager.hideDevice($0, category: .speaker) },
+                        onUnhide: { audioManager.unhideDevice($0, category: .speaker) },
+                        category: .speaker,
+                        showCategoryPicker: true
+                    )
+
+                    PanelDivider()
+                        .padding(.vertical, 6)
+
+                    DeviceSectionView(
+                        title: "麦克风",
                         devices: audioManager.inputDevices,
                         currentDeviceId: audioManager.currentInputId,
                         onMove: audioManager.moveInputDevice,
@@ -78,156 +73,124 @@ struct MenuBarView: View {
                         category: nil,
                         showCategoryPicker: false
                     )
-                }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 14)
-            }
-            .frame(maxHeight: 420)
 
-            Divider()
-                .padding(.horizontal, 12)
-
-            // Footer
-            HStack(spacing: 16) {
-                // Hidden devices toggle (only in normal mode)
-                if !audioManager.isEditMode {
-                    HiddenDevicesToggleView()
-                        .transition(.opacity.combined(with: .scale(scale: 0.9)))
-                }
-
-                Spacer()
-                
-                // Launch at login toggle
-                LaunchAtLoginToggle()
-
-                // Edit mode toggle
-                Button {
-                    withAnimation(.easeInOut(duration: 0.2)) {
-                        audioManager.toggleEditMode()
+                    if !audioManager.isEditMode {
+                        HiddenDevicesToggleView()
                     }
-                } label: {
-                    HStack(spacing: 4) {
-                        Image(systemName: audioManager.isEditMode ? "checkmark.circle.fill" : "pencil.circle")
-                            .font(.system(size: 12))
-                        Text(audioManager.isEditMode ? "Done" : "Edit")
-                            .font(.system(size: 12, weight: .medium))
-                    }
-                    .foregroundColor(audioManager.isEditMode ? .accentColor : .secondary)
                 }
-                .buttonStyle(.plain)
-                .animation(.easeInOut(duration: 0.2), value: audioManager.isEditMode)
-
-                // Quit button
-                Button {
-                    NSApplication.shared.terminate(nil)
-                } label: {
-                    Image(systemName: "xmark.circle.fill")
-                        .font(.system(size: 14))
-                        .foregroundColor(.secondary.opacity(0.6))
-                }
-                .buttonStyle(.plain)
-                .help("Quit")
+                .padding(.vertical, 4)
+                .background(GeometryReader { proxy in
+                    Color.clear.preference(key: DeviceListHeightKey.self, value: proxy.size.height)
+                })
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 10)
-            .animation(.easeInOut(duration: 0.2), value: audioManager.isEditMode)
+            // A ScrollView has no height of its own, so size it to its content
+            .frame(height: min(deviceListHeight, 460))
+            .onPreferenceChange(DeviceListHeightKey.self) { deviceListHeight = $0 }
+
+            PanelDivider()
+
+            PanelMenuRow(title: "声音设置…") {
+                if let url = URL(string: "x-apple.systempreferences:com.apple.Sound-Settings.extension") {
+                    NSWorkspace.shared.open(url)
+                }
+            }
+            .padding(.vertical, 5)
         }
-        .frame(width: 340)
+        .frame(width: 320)
     }
 }
 
-struct ModeToggleView: View {
+private struct DeviceListHeightKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
+    }
+}
+
+struct PanelDivider: View {
+    var body: some View {
+        Divider()
+            .padding(.horizontal, 14)
+    }
+}
+
+// Title row. Everything the system menu has no place for lives in the menu on the right.
+struct PanelHeaderView: View {
     @EnvironmentObject var audioManager: AudioManager
+    @StateObject private var launchManager = LaunchAtLoginManager.shared
 
     var body: some View {
-        HStack(spacing: 4) {
-            ForEach(OutputCategory.allCases, id: \.self) { mode in
-                let isSelected = audioManager.currentMode == mode && !audioManager.isCustomMode
+        HStack(spacing: 8) {
+            Text("声音")
+                .font(.system(size: 13, weight: .bold))
+
+            if audioManager.isCustomMode {
                 Button {
-                    withAnimation(.easeInOut(duration: 0.2)) {
-                        if audioManager.isCustomMode {
-                            audioManager.setCustomMode(false)
-                        }
-                        audioManager.setMode(mode)
-                    }
+                    audioManager.setCustomMode(false)
                 } label: {
-                    HStack(spacing: 5) {
-                        Image(systemName: mode.icon)
-                            .font(.system(size: 11))
-                        Text(mode.label)
-                            .font(.system(size: 12, weight: .medium))
-                            .lineLimit(1)
-                            .fixedSize(horizontal: true, vertical: false)
+                    HStack(spacing: 3) {
+                        Image(systemName: "hand.raised.fill")
+                            .font(.system(size: 9))
+                        Text("自动切换已暂停")
+                            .font(.system(size: 10, weight: .medium))
                     }
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
-                    .frame(maxWidth: .infinity)
-                    .contentShape(Rectangle())
-                    .background(
-                        RoundedRectangle(cornerRadius: 10)
-                            .fill(isSelected ? Color.accentColor : Color.clear)
-                    )
-                    .foregroundColor(isSelected ? .white : .secondary)
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 3)
+                    .background(Capsule().fill(Color.orange))
                 }
                 .buttonStyle(.plain)
+                .help("点击恢复自动切换")
             }
 
-            // Custom mode toggle
-            Button {
-                withAnimation(.easeInOut(duration: 0.2)) {
-                    audioManager.setCustomMode(!audioManager.isCustomMode)
+            Spacer()
+
+            if audioManager.isEditMode {
+                Button {
+                    audioManager.toggleEditMode()
+                } label: {
+                    Text("完成")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundColor(.accentColor)
                 }
-            } label: {
-                Image(systemName: "hand.raised.fill")
-                    .font(.system(size: 12))
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
-                    .contentShape(Rectangle())
-                    .background(
-                        RoundedRectangle(cornerRadius: 10)
-                            .fill(audioManager.isCustomMode ? Color.orange : Color.clear)
-                    )
-                    .foregroundColor(audioManager.isCustomMode ? .white : .secondary)
+                .buttonStyle(.plain)
+            } else {
+                Menu {
+                    Toggle("自动切换设备", isOn: Binding(
+                        get: { !audioManager.isCustomMode },
+                        set: { audioManager.setCustomMode(!$0) }
+                    ))
+                    Toggle("开机启动", isOn: $launchManager.isEnabled)
+                    Divider()
+                    Button("编辑设备列表") {
+                        audioManager.toggleEditMode()
+                    }
+                    Divider()
+                    Button("退出") {
+                        NSApplication.shared.terminate(nil)
+                    }
+                } label: {
+                    Image(systemName: "ellipsis.circle")
+                        .font(.system(size: 14))
+                        .foregroundColor(.secondary)
+                }
+                .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
+                .fixedSize()
             }
-            .buttonStyle(.plain)
-            .help("Manual mode - disable auto-switching")
         }
-        .padding(4)
-        .background(
-            RoundedRectangle(cornerRadius: 12)
-                .fill(Color.primary.opacity(0.05))
-        )
-        .animation(.easeInOut(duration: 0.2), value: audioManager.currentMode)
-        .animation(.easeInOut(duration: 0.2), value: audioManager.isCustomMode)
+        .frame(height: 18)
     }
 }
 
 struct VolumeSliderView: View {
     @EnvironmentObject var audioManager: AudioManager
 
-    var volumeIcon: String {
-        if audioManager.currentMode == .headphone {
-            return "headphones"
-        } else {
-            if audioManager.volume <= 0 {
-                return "speaker.fill"
-            } else if audioManager.volume < 0.33 {
-                return "speaker.wave.1.fill"
-            } else if audioManager.volume < 0.66 {
-                return "speaker.wave.2.fill"
-            } else {
-                return "speaker.wave.3.fill"
-            }
-        }
-    }
-
     var body: some View {
-        HStack(spacing: 10) {
-            Image(systemName: volumeIcon)
-                .font(.system(size: 13))
-                .foregroundColor(.accentColor)
-                .frame(width: 20)
-                .animation(.easeInOut(duration: 0.15), value: volumeIcon)
+        HStack(spacing: 8) {
+            Image(systemName: "speaker.fill")
+                .font(.system(size: 16))
+                .foregroundColor(.secondary)
 
             Slider(
                 value: Binding(
@@ -236,12 +199,10 @@ struct VolumeSliderView: View {
                 ),
                 in: 0...1
             )
-            .controlSize(.small)
 
-            Text("\(Int(audioManager.volume * 100))%")
-                .font(.system(size: 11, design: .monospaced))
+            Image(systemName: "speaker.wave.3.fill")
+                .font(.system(size: 16))
                 .foregroundColor(.secondary)
-                .frame(width: 36, alignment: .trailing)
         }
         .onScrollWheel { delta in
             let newVolume = audioManager.volume + Float(delta * 0.02)
@@ -291,7 +252,6 @@ extension View {
 
 struct DeviceSectionView: View {
     let title: String
-    let icon: String
     let devices: [AudioDevice]
     let currentDeviceId: AudioObjectID?
     let onMove: (IndexSet, Int) -> Void
@@ -300,28 +260,21 @@ struct DeviceSectionView: View {
     var onUnhide: ((AudioDevice) -> Void)?
     var category: OutputCategory?
     var showCategoryPicker: Bool = false
-    var isActiveCategory: Bool = true
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 6) {
-                Image(systemName: icon)
-                    .font(.system(size: 11))
-                    .foregroundColor(isActiveCategory ? .accentColor : .secondary)
-                Text(title)
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundColor(.secondary)
-                    .textCase(.uppercase)
-                    .tracking(0.5)
-            }
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundColor(.secondary)
+                .padding(.horizontal, 14)
+                .padding(.top, 6)
 
             if devices.isEmpty {
-                Text("No devices")
+                Text("没有设备")
                     .font(.system(size: 13))
                     .foregroundColor(.secondary.opacity(0.7))
-                    .italic()
-                    .padding(.vertical, 10)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 6)
             } else {
                 DeviceListView(
                     devices: devices,
@@ -333,8 +286,35 @@ struct DeviceSectionView: View {
                     onUnhide: onUnhide,
                     category: category
                 )
+                .padding(.horizontal, 6)
             }
         }
+        .padding(.bottom, 2)
+    }
+}
+
+// A plain text row that highlights on hover, like "Sound Settings…" in the system menu
+struct PanelMenuRow: View {
+    let title: String
+    let action: () -> Void
+    @State private var isHovering = false
+
+    var body: some View {
+        Button(action: action) {
+            Text(title)
+                .font(.system(size: 13))
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 8)
+                .frame(height: 26)
+                .background(
+                    RoundedRectangle(cornerRadius: 6)
+                        .fill(isHovering ? Color.primary.opacity(0.07) : Color.clear)
+                )
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .padding(.horizontal, 6)
+        .onHover { isHovering = $0 }
     }
 }
 
@@ -349,10 +329,7 @@ struct HiddenDevicesToggleView: View {
     }
 
     var body: some View {
-        if allHiddenDevices.isEmpty {
-            Text("")
-                .frame(height: 1)
-        } else {
+        if !allHiddenDevices.isEmpty {
             Button {
                 withAnimation(.easeInOut(duration: 0.15)) {
                     isExpanded.toggle()
@@ -364,10 +341,13 @@ struct HiddenDevicesToggleView: View {
                         .rotationEffect(.degrees(isExpanded ? 90 : 0))
                     Image(systemName: "eye.slash")
                         .font(.system(size: 11))
-                    Text("\(allHiddenDevices.count) ignored")
+                    Text("已忽略 \(allHiddenDevices.count) 个")
                         .font(.system(size: 12))
                 }
                 .foregroundColor(.secondary)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 6)
+                .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .popover(isPresented: $isExpanded, arrowEdge: .bottom) {
@@ -388,18 +368,9 @@ struct HiddenDeviceRow: View {
     let device: AudioDevice
     @State private var isHovering = false
 
-    var deviceIcon: String {
-        if device.type == .input {
-            return "mic.fill"
-        } else {
-            let category = audioManager.priorityManager.getCategory(for: device)
-            return category == .headphone ? "headphones" : "speaker.wave.2.fill"
-        }
-    }
-
     var body: some View {
         HStack(spacing: 10) {
-            Image(systemName: deviceIcon)
+            Image(systemName: DeviceGlyph.symbol(for: device, category: device.type == .input ? nil : audioManager.priorityManager.getCategory(for: device)))
                 .font(.system(size: 11))
                 .foregroundColor(.secondary)
                 .frame(width: 18)
@@ -421,14 +392,14 @@ struct HiddenDeviceRow: View {
                         .foregroundColor(.secondary)
                 }
                 .buttonStyle(.plain)
-                .help("Stop ignoring")
+                .help("取消忽略")
                 .transition(.opacity.combined(with: .scale(scale: 0.8)))
             }
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 8)
         .background(
-            RoundedRectangle(cornerRadius: 10)
+            RoundedRectangle(cornerRadius: 8)
                 .fill(isHovering ? Color.primary.opacity(0.06) : Color.clear)
         )
         .animation(.easeInOut(duration: 0.15), value: isHovering)
@@ -440,24 +411,82 @@ struct HiddenDeviceRow: View {
     }
 }
 
-struct LaunchAtLoginToggle: View {
-    @StateObject private var launchManager = LaunchAtLoginManager.shared
-    
-    var body: some View {
-        Button {
-            withAnimation(.easeInOut(duration: 0.15)) {
-                launchManager.isEnabled.toggle()
-            }
-        } label: {
-            HStack(spacing: 4) {
-                Image(systemName: launchManager.isEnabled ? "power.circle.fill" : "power.circle")
-                    .font(.system(size: 12))
-                Text("Login")
-                    .font(.system(size: 11, weight: .medium))
-            }
-            .foregroundColor(launchManager.isEnabled ? .accentColor : .secondary)
+// Picks the symbol shown in a device's round icon
+enum DeviceGlyph {
+    static func symbol(for device: AudioDevice, category: OutputCategory?) -> String {
+        symbol(name: device.name, type: device.type, category: category, transport: device.transportType)
+    }
+
+    static func symbol(name: String, type: AudioDeviceType, category: OutputCategory?, transport: UInt32?) -> String {
+        candidates(name: name.lowercased(), type: type, category: category, transport: transport)
+            .first(where: exists) ?? (type == .input ? "mic.fill" : "hifispeaker.fill")
+    }
+
+    // Most specific first; a symbol this macOS does not have is skipped
+    private static func candidates(name: String, type: AudioDeviceType, category: OutputCategory?, transport: UInt32?) -> [String] {
+        func has(_ words: String...) -> Bool {
+            words.contains { name.contains($0) }
         }
-        .buttonStyle(.plain)
-        .help(launchManager.isEnabled ? "Disable launch at login" : "Enable launch at login")
+
+        // Apple and Beats products, recognised by name
+        if has("airpods max") { return ["airpods.max", "headphones"] }
+        if has("airpods pro 3") { return ["airpods.pro.gen3", "airpods.pro"] }
+        if has("airpods pro") { return ["airpods.pro"] }
+        if has("airpods 4", "airpods4") { return ["airpods.gen4", "airpods"] }
+        if has("airpods 3", "airpods3") { return ["airpods.gen3", "airpods"] }
+        if has("airpods") { return ["airpods"] }
+        if has("earpods") { return ["earpods", "headphones"] }
+        if has("powerbeats pro") { return ["beats.powerbeats.pro", "beats.earphones", "headphones"] }
+        if has("powerbeats") { return ["beats.powerbeats", "beats.earphones", "headphones"] }
+        if has("beats fit") { return ["beats.fit.pro", "beats.earphones", "headphones"] }
+        if has("studio buds") { return ["beats.studiobuds", "beats.earphones", "headphones"] }
+        if has("solo buds") { return ["beats.solobuds", "beats.earphones", "headphones"] }
+        if has("beats flex", "beatsx", "urbeats") { return ["beats.earphones", "headphones"] }
+        if has("beats pill") { return ["beats.pill", "hifispeaker.fill"] }
+        if has("beats") { return ["beats.headphones", "headphones"] }
+        if has("iphone") { return ["iphone"] }
+        if has("ipad") { return ["ipad"] }
+        if has("homepod mini") { return ["homepodmini.fill", "homepod.fill"] }
+        if has("homepod") { return ["homepod.fill"] }
+        if has("apple tv") { return ["appletv.fill", "tv"] }
+        if has("vision pro") { return ["vision.pro", "headphones"] }
+        if has("macbook") { return ["laptopcomputer"] }
+        if has("mac mini") { return ["macmini.fill", "desktopcomputer"] }
+        if has("mac studio") { return ["macstudio.fill", "desktopcomputer"] }
+        if has("imac", "mac pro") { return ["desktopcomputer"] }
+
+        if has("电视") || name.hasSuffix(" tv") || name.hasPrefix("tv ") || name.contains(" tv ") {
+            return ["tv"]
+        }
+        // Screens: by name, or anything that plays over HDMI / DisplayPort
+        if has("monitor", "display", "显示器")
+            || transport == kAudioDeviceTransportTypeDisplayPort
+            || transport == kAudioDeviceTransportTypeHDMI {
+            return ["display"]
+        }
+        if transport == kAudioDeviceTransportTypeAirPlay { return ["airplayaudio"] }
+
+        if type == .output {
+            if category == .headphone { return ["headphones"] }
+            if transport == kAudioDeviceTransportTypeBuiltIn { return ["desktopcomputer"] }
+            return ["hifispeaker.fill"]
+        }
+
+        // A microphone that belongs to a headset shows as the headset
+        if transport == kAudioDeviceTransportTypeBluetooth
+            || transport == kAudioDeviceTransportTypeBluetoothLE
+            || has("headset", "headphone", "earphone", "耳机", "耳麦") {
+            return ["headphones"]
+        }
+        return ["mic.fill"]
+    }
+
+    private static var known: [String: Bool] = [:]
+
+    private static func exists(_ symbol: String) -> Bool {
+        if let cached = known[symbol] { return cached }
+        let found = NSImage(systemSymbolName: symbol, accessibilityDescription: nil) != nil
+        known[symbol] = found
+        return found
     }
 }

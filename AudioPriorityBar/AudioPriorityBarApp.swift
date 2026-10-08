@@ -10,7 +10,8 @@ struct AudioPriorityBarApp: App {
             MenuBarView()
                 .environmentObject(audioManager)
         } label: {
-            Image(systemName: "speaker.wave.2.fill")
+            // One Image only: a label made of several views did not show up reliably
+            Image(systemName: audioManager.menuBarSymbol.name, variableValue: audioManager.menuBarSymbol.value)
         }
         .menuBarExtraStyle(.window)
     }
@@ -95,6 +96,18 @@ class AudioManager: ObservableObject {
 
     var menuBarIcon: String {
         currentMode.icon
+    }
+
+    /// Symbol for the menu bar, following what the system Sound icon shows:
+    /// the headphones in use, a slashed speaker when muted, otherwise waves by volume
+    var menuBarSymbol: (name: String, value: Double?) {
+        if let headphone = headphoneDevices.first(where: { $0.isConnected && $0.id == currentOutputId }) {
+            return (DeviceGlyph.symbol(for: headphone, category: .headphone), nil)
+        }
+        if isActiveOutputMuted {
+            return ("speaker.slash.fill", nil)
+        }
+        return ("speaker.wave.3.fill", Double(volume))
     }
 
     func refreshVolume() {

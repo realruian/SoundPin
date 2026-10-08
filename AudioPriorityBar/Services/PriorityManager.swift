@@ -1,4 +1,5 @@
 import Foundation
+import CoreAudio
 
 struct StoredDevice: Codable, Equatable {
     let uid: String
@@ -11,22 +12,22 @@ struct StoredDevice: Codable, Equatable {
         let interval = now.timeIntervalSince(lastSeen)
 
         if interval < 60 {
-            return "now"
+            return "刚刚"
         } else if interval < 3600 {
             let mins = Int(interval / 60)
-            return "\(mins)m ago"
+            return "\(mins) 分钟前"
         } else if interval < 86400 {
             let hours = Int(interval / 3600)
-            return "\(hours)h ago"
+            return "\(hours) 小时前"
         } else if interval < 604800 {
             let days = Int(interval / 86400)
-            return "\(days)d ago"
+            return "\(days) 天前"
         } else if interval < 2592000 {
             let weeks = Int(interval / 604800)
-            return "\(weeks)w ago"
+            return "\(weeks) 周前"
         } else {
             let months = Int(interval / 2592000)
-            return "\(months)mo ago"
+            return "\(months) 个月前"
         }
     }
 }
@@ -110,6 +111,11 @@ class PriorityManager {
         }
         // Default headphone-like devices to headphone category
         if HeadphoneDetection.isHeadphone(deviceName: device.name) {
+            // A screen's audio is never headphones, whatever its name contains ("UltraGear" has "ear" in it)
+            if let transport = device.transportType,
+               transport == kAudioDeviceTransportTypeDisplayPort || transport == kAudioDeviceTransportTypeHDMI {
+                return .speaker
+            }
             return .headphone
         }
         return .speaker

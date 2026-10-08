@@ -19,8 +19,8 @@ enum OutputCategory: String, Codable, CaseIterable {
 
     var label: String {
         switch self {
-        case .speaker: return "Speakers"
-        case .headphone: return "Headphones"
+        case .speaker: return "扬声器"
+        case .headphone: return "耳机"
         }
     }
 }
@@ -39,5 +39,21 @@ struct AudioDevice: Identifiable, Equatable, Hashable {
     // Create a disconnected placeholder from stored device
     static func disconnected(uid: String, name: String, type: AudioDeviceType) -> AudioDevice {
         AudioDevice(id: 0, uid: uid, name: name, type: type, isConnected: false)
+    }
+}
+
+extension AudioDevice {
+    /// How the device is attached (built-in, USB, Bluetooth, HDMI, ...); nil when it is not connected
+    var transportType: UInt32? {
+        guard isConnected else { return nil }
+        var address = AudioObjectPropertyAddress(
+            mSelector: kAudioDevicePropertyTransportType,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        var value: UInt32 = 0
+        var size = UInt32(MemoryLayout<UInt32>.size)
+        let status = AudioObjectGetPropertyData(id, &address, 0, nil, &size, &value)
+        return status == noErr ? value : nil
     }
 }

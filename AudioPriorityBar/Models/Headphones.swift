@@ -13,6 +13,8 @@ struct HeadphoneDetection {
         "buds",
         "ear",
         "pods",
+        "耳机",
+        "耳麦",
 
         // Apple
         "airpods",
