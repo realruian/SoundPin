@@ -52,11 +52,13 @@ class AudioManager: ObservableObject {
     @Published var currentOutputId: AudioObjectID?
     @Published var currentMode: OutputCategory = .speaker
     @Published var volume: Float = 0
+    /// False while the output in use has no volume the Mac can set
+    @Published var hasVolumeControl: Bool = true
     @Published var isEditMode: Bool = false
     @Published var isCustomMode: Bool = false
-    @Published var mutedDeviceIds: Set<AudioObjectID> = []
+    /// Row identities, not device ids: a device with a microphone and a speaker has one id for the two
+    @Published var mutedRowIDs: Set<String> = []
     @Published var isActiveOutputMuted: Bool = false
-    @Published var isActiveInputMuted: Bool = false
     /// Published so that every view redraws its text when the language changes
     @Published var language: AppLanguage = L10n.setting {
         didSet { L10n.setting = language }
@@ -68,6 +70,7 @@ class AudioManager: ObservableObject {
 
     /// Symbol for the menu bar, following what the system Sound icon shows:
     /// the headphones in use, a slashed speaker when muted, otherwise waves by volume
+    /// (all of them for an output whose volume cannot be read)
     var menuBarSymbol: (name: String, value: Double?) {
         if let headphone = headphoneDevices.first(where: { $0.isConnected && $0.id == currentOutputId }) {
             return (DeviceGlyph.symbol(for: headphone, category: .headphone), nil)
@@ -75,50 +78,38 @@ class AudioManager: ObservableObject {
         if isActiveOutputMuted {
             return ("speaker.slash.fill", nil)
         }
-        return ("speaker.wave.3.fill", Double(volume))
+        return ("speaker.wave.3.fill", hasVolumeControl ? Double(volume) : nil)
     }
 
     func refreshVolume() {
+        hasVolumeControl = deviceService.canSetOutputVolume()
         volume = deviceService.getOutputVolume()
     }
 
     func refreshMuteStatus() {
-        var muted: Set<AudioObjectID> = []
-        for device in inputDevices where device.isConnected {
-            if deviceService.isDeviceMuted(device.id, type: .input) {
-                muted.insert(device.id)
+        var muted: Set<String> = []
+        for device in inputDevices + speakerDevices + headphoneDevices where device.isConnected {
+            if deviceService.isDeviceMuted(device.id, type: device.type) {
+                muted.insert(device.rowID)
             }
         }
-        for device in speakerDevices where device.isConnected {
-            if deviceService.isDeviceMuted(device.id, type: .output) {
-                muted.insert(device.id)
-            }
-        }
-        for device in headphoneDevices where device.isConnected {
-            if deviceService.isDeviceMuted(device.id, type: .output) {
-                muted.insert(device.id)
-            }
-        }
-        mutedDeviceIds = muted
-        if let outputId = currentOutputId {
-            isActiveOutputMuted = muted.contains(outputId)
-        } else {
-            isActiveOutputMuted = false
-        }
-        if let inputId = currentInputId {
-            isActiveInputMuted = muted.contains(inputId)
-        } else {
-            isActiveInputMuted = false
-        }
+        mutedRowIDs = muted
+        let activeOutput = (speakerDevices + headphoneDevices).first { $0.isConnected && $0.id == currentOutputId }
+        isActiveOutputMuted = activeOutput.map { muted.contains($0.rowID) } ?? false
     }
 
     func isDeviceMuted(_ device: AudioDevice) -> Bool {
-        mutedDeviceIds.contains(device.id)
+        mutedRowIDs.contains(device.rowID)
     }
 
     func setVolume(_ newVolume: Float) {
+        guard hasVolumeControl else { return }
         volume = newVolume
         deviceService.setOutputVolume(newVolume)
+        // Like the system's slider: turning a muted output up unmutes it
+        if newVolume > 0 {
+            deviceService.unmuteOutput()
+        }
     }
 
     var activeOutputDevices: [AudioDevice] {
@@ -366,6 +357,8 @@ class AudioManager: ObservableObject {
             deviceService.setDefaultDevice(device.id, type: .output)
         }
         currentOutputId = device.id
+        // The slider shows the volume of the output in use
+        refreshVolume()
     }
 
     private func applyHighestPriorityInput() {
@@ -395,6 +388,7 @@ class AudioManager: ObservableObject {
         let oldConnectedUIDs = previousConnectedUIDs
         refreshDevices()
         refreshMuteStatus()
+        refreshVolume()
         
         // Detect newly connected devices
         let newlyConnectedUIDs = connectedDeviceUIDs.subtracting(oldConnectedUIDs)

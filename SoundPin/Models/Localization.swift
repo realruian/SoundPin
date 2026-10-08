@@ -38,6 +38,7 @@ enum L10n {
     static var microphones: String { pick("Microphones", "麦克风") }
     static var soundSettings: String { pick("Sound Settings…", "声音设置…") }
     static var noDevices: String { pick("No Devices", "没有设备") }
+    static var noVolumeControl: String { pick("This device has no volume control", "此设备不支持调节音量") }
     static var done: String { pick("Done", "完成") }
     static var autoSwitchPaused: String { pick("Auto-Switch Paused", "自动切换已暂停") }
     static var resumeAutoSwitchHelp: String { pick("Click to resume automatic switching", "点击恢复自动切换") }

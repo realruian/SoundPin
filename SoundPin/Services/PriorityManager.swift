@@ -139,19 +139,24 @@ class PriorityManager {
 
     private let neverUseKey = "neverUseDevices"
 
+    // An entry is a row identity, so the microphone and the speaker of one device are
+    // set apart. Entries written by 2.2.1 and earlier are a bare UID and cover both.
+
     func isNeverUse(_ device: AudioDevice) -> Bool {
         let list = defaults.array(forKey: neverUseKey) as? [String] ?? []
-        return list.contains(device.uid)
+        return list.contains(device.rowID) || list.contains(device.uid)
     }
 
     func setNeverUse(_ device: AudioDevice, neverUse: Bool) {
         var list = defaults.array(forKey: neverUseKey) as? [String] ?? []
+        // An older entry stays in force for the other side only, so that this side changes by itself
+        if let index = list.firstIndex(of: device.uid) {
+            let otherSide: AudioDeviceType = device.type == .input ? .output : .input
+            list[index] = "\(otherSide.rawValue):\(device.uid)"
+        }
+        list.removeAll { $0 == device.rowID }
         if neverUse {
-            if !list.contains(device.uid) {
-                list.append(device.uid)
-            }
-        } else {
-            list.removeAll { $0 == device.uid }
+            list.append(device.rowID)
         }
         defaults.set(list, forKey: neverUseKey)
     }

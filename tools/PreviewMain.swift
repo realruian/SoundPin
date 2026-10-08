@@ -47,7 +47,7 @@ import CoreAudio
             manager.currentMode = .headphone
             manager.currentOutputId = 9001
             manager.currentInputId = 9004
-            manager.mutedDeviceIds = []
+            manager.mutedRowIDs = []
             manager.volume = 0.6
         }
 

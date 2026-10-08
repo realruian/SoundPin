@@ -156,6 +156,61 @@ class AudioDeviceService {
         )
     }
 
+    /// False for an output whose loudness the Mac cannot set, such as most screens over
+    /// HDMI or DisplayPort
+    func canSetOutputVolume() -> Bool {
+        guard let deviceId = getCurrentDefaultDevice(type: .output) else { return false }
+
+        var propertyAddress = AudioObjectPropertyAddress(
+            mSelector: kAudioHardwareServiceDeviceProperty_VirtualMainVolume,
+            mScope: kAudioDevicePropertyScopeOutput,
+            mElement: kAudioObjectPropertyElementMain
+        )
+
+        guard AudioObjectHasProperty(deviceId, &propertyAddress) else { return false }
+
+        var settable: DarwinBoolean = false
+        let status = AudioObjectIsPropertySettable(deviceId, &propertyAddress, &settable)
+
+        return status == noErr && settable.boolValue
+    }
+
+    /// Unmutes the current output if it is muted. Setting the volume does not do this.
+    func unmuteOutput() {
+        guard let deviceId = getCurrentDefaultDevice(type: .output) else { return }
+
+        var propertyAddress = AudioObjectPropertyAddress(
+            mSelector: kAudioDevicePropertyMute,
+            mScope: kAudioDevicePropertyScopeOutput,
+            mElement: kAudioObjectPropertyElementMain
+        )
+
+        var muted: UInt32 = 0
+        let dataSize = UInt32(MemoryLayout<UInt32>.size)
+        var readSize = dataSize
+
+        let status = AudioObjectGetPropertyData(
+            deviceId,
+            &propertyAddress,
+            0,
+            nil,
+            &readSize,
+            &muted
+        )
+
+        guard status == noErr, muted != 0 else { return }
+
+        muted = 0
+        AudioObjectSetPropertyData(
+            deviceId,
+            &propertyAddress,
+            0,
+            nil,
+            dataSize,
+            &muted
+        )
+    }
+
     func isDeviceMuted(_ deviceId: AudioObjectID, type: AudioDeviceType) -> Bool {
         let scope: AudioObjectPropertyScope = type == .input
             ? kAudioDevicePropertyScopeInput

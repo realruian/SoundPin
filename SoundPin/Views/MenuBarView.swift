@@ -239,7 +239,10 @@ struct PanelHeaderView: View {
                         get: { !audioManager.isCustomMode },
                         set: { audioManager.setCustomMode(!$0) }
                     ))
-                    Toggle(L10n.openAtLogin, isOn: $launchManager.isEnabled)
+                    Toggle(L10n.openAtLogin, isOn: Binding(
+                        get: { launchManager.isEnabled },
+                        set: { launchManager.setEnabled($0) }
+                    ))
                     Divider()
                     Button(L10n.editDeviceList) {
                         audioManager.toggleEditMode()
@@ -265,6 +268,10 @@ struct PanelHeaderView: View {
             }
         }
         .frame(height: 18)
+        // The login item can be turned off in System Settings; read it again each time the panel opens
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { _ in
+            launchManager.refresh()
+        }
     }
 }
 
@@ -289,6 +296,10 @@ struct VolumeSliderView: View {
                 .font(.system(size: 16))
                 .foregroundColor(.panelGlyph)
         }
+        // An output with no volume the Mac can set, such as a screen: dimmed, as in the system menu
+        .disabled(!audioManager.hasVolumeControl)
+        .opacity(audioManager.hasVolumeControl ? 1 : 0.45)
+        .help(audioManager.hasVolumeControl ? "" : L10n.noVolumeControl)
         .onScrollWheel { delta in
             let newVolume = audioManager.volume + Float(delta * 0.02)
             audioManager.setVolume(max(0, min(1, newVolume)))

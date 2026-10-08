@@ -4,58 +4,36 @@ import ServiceManagement
 @MainActor
 class LaunchAtLoginManager: ObservableObject {
     static let shared = LaunchAtLoginManager()
-    
-    @Published var isEnabled: Bool {
-        didSet {
-            if isEnabled {
-                enableLaunchAtLogin()
-            } else {
-                disableLaunchAtLogin()
-            }
-        }
-    }
-    
+
+    /// What the system reports, not what was last asked for: a change that failed, or one
+    /// made in System Settings, shows after the next refresh
+    @Published private(set) var isEnabled = false
+
     private init() {
-        // Check current status
-        if #available(macOS 13.0, *) {
-            isEnabled = SMAppService.mainApp.status == .enabled
-        } else {
-            isEnabled = false
-        }
+        refresh()
     }
-    
-    private func enableLaunchAtLogin() {
+
+    func setEnabled(_ enabled: Bool) {
         if #available(macOS 13.0, *) {
             do {
-                try SMAppService.mainApp.register()
-            } catch {
-                print("Failed to enable launch at login: \(error)")
-                // Revert the toggle if registration fails
-                DispatchQueue.main.async {
-                    self.isEnabled = false
+                if enabled {
+                    try SMAppService.mainApp.register()
+                } else {
+                    try SMAppService.mainApp.unregister()
                 }
-            }
-        }
-    }
-    
-    private func disableLaunchAtLogin() {
-        if #available(macOS 13.0, *) {
-            do {
-                try SMAppService.mainApp.unregister()
             } catch {
-                print("Failed to disable launch at login: \(error)")
+                print("Failed to \(enabled ? "enable" : "disable") launch at login: \(error)")
             }
         }
+        refresh()
     }
-    
+
     func refresh() {
         if #available(macOS 13.0, *) {
             let newStatus = SMAppService.mainApp.status == .enabled
             if newStatus != isEnabled {
-                // Update without triggering didSet
-                _isEnabled = Published(wrappedValue: newStatus)
+                isEnabled = newStatus
             }
         }
     }
 }
-
