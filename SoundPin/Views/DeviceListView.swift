@@ -188,7 +188,7 @@ struct DraggableDeviceRow: View {
         device.isConnected && audioManager.isDeviceMuted(device)
     }
 
-    /// What VoiceOver reads after the name: the marks the row shows as small icons
+    /// Device status read by VoiceOver after the name, including mute state.
     private var accessibilityStatus: String {
         var parts: [String] = []
         if isDisconnected {
@@ -313,13 +313,6 @@ struct DraggableDeviceRow: View {
                 Text(lastSeen)
                     .font(.system(size: 10))
                     .foregroundColor(.secondary.opacity(0.6))
-            }
-
-            if isMuted {
-                Image(systemName: device.type == .input ? "mic.slash.fill" : "speaker.slash.fill")
-                    .font(.system(size: 10))
-                    .foregroundColor(.secondary)
-                    .help(L10n.muted)
             }
 
             Spacer(minLength: 4)
