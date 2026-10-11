@@ -70,12 +70,14 @@ class AudioManager: ObservableObject {
     /// Row identities, not device ids: a device with a microphone and a speaker has one id for the two
     @Published var mutedRowIDs: Set<String> = []
     @Published var isActiveOutputMuted: Bool = false
+    @Published var listeningModes: [String: ListeningModeState] = [:]
     /// Published so that every view redraws its text when the language changes
     @Published var language: AppLanguage = L10n.setting {
         didSet { L10n.setting = language }
     }
 
     private let deviceService = AudioDeviceService()
+    private let listeningModeService = ListeningModeService()
     let priorityManager = PriorityManager()
     private var connectedDeviceUIDs: Set<String> = []
 
@@ -139,6 +141,9 @@ class AudioManager: ObservableObject {
         refreshMuteStatus()
         setupDeviceChangeListener()
         setupMuteVolumeListener()
+        listeningModeService.onChange = { [weak self] in
+            Task { @MainActor in self?.refreshListeningModes() }
+        }
         if !isCustomMode {
             followOutputInUse()
             pickAgain(.input)
@@ -258,6 +263,24 @@ class AudioManager: ObservableObject {
         }
         currentInputId = inputInUse
         currentOutputId = outputInUse
+        listeningModeService.observe(connectedOutputs)
+        refreshListeningModes()
+    }
+
+    func refreshListeningModes() {
+        let devices = headphoneDevices + speakerDevices + hiddenHeadphoneDevices + hiddenSpeakerDevices
+        var next: [String: ListeningModeState] = [:]
+        for device in devices where device.isConnected {
+            next[device.uid] = listeningModeService.state(for: device)
+        }
+        if next != listeningModes { listeningModes = next }
+    }
+
+    /// Does not select an output or change the device's priority.
+    func setListeningMode(_ mode: ListeningMode, for device: AudioDevice) -> Bool {
+        let accepted = listeningModeService.request(mode, for: device)
+        refreshListeningModes()
+        return accepted
     }
 
     func toggleEditMode() {

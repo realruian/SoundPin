@@ -20,8 +20,8 @@ import CoreGraphics
         check("Completely outside the right edge",
               CGRect(x: 1600, y: 450, width: 308, height: 400), expected: CGPoint(x: 1132, y: 450))
         check("Left edge", CGRect(x: -290, y: 450, width: 308, height: 400), expected: CGPoint(x: 0, y: 450))
-        check("Keep normal horizontal anchor and close the menu bar gap",
-              CGRect(x: 700, y: 471.5, width: 308, height: 400), expected: CGPoint(x: 700, y: 474.5))
+        check("Keep the system anchor during menu resizing",
+              CGRect(x: 700, y: 471.5, width: 308, height: 400), expected: CGPoint(x: 700, y: 471.5))
         check("Do not move an already valid panel",
               CGRect(x: 700, y: 450, width: 308, height: 400), expected: CGPoint(x: 700, y: 450))
         check("Above screen", CGRect(x: 700, y: 800, width: 308, height: 400), expected: CGPoint(x: 700, y: 475))
@@ -37,6 +37,14 @@ import CoreGraphics
               visible: screen, expected: CGPoint(x: 1132, y: 450))
         check("Oversized panel keeps title reachable",
               CGRect(x: 1420, y: -100, width: 308, height: 1000), expected: CGPoint(x: 1132, y: -125))
+        // Simulate the system applying the same top anchor on every expansion
+        // frame. A gap correction here used to alternate the panel by 3 pt.
+        let systemTop: CGFloat = visible.maxY - 3.5
+        for height in stride(from: CGFloat(330), through: 550, by: 0.5) {
+            let panel = CGRect(x: 700, y: systemTop - height, width: 308, height: height)
+            let origin = PanelPlacement.origin(for: panel, screen: screen, visibleFrame: visible)
+            precondition(origin == panel.origin, "Animated resize must preserve the system anchor")
+        }
         print("Passed \(checks) panel placement cases, including stability after repeated correction.")
     }
 }

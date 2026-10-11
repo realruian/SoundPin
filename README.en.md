@@ -39,6 +39,7 @@ SoundPin maintains priority lists for speakers, headphones, and microphones. Whe
 - **Separate headphone and speaker lists**: Routes to headphones when connected, and returns to desktop speakers when disconnected. Display audio (HDMI/DisplayPort) is filtered so it is never mistaken for headphones.
 - **Click to promote**: Clicking any connected device selects it immediately. With automatic switching on, it also moves to the top of its priority list.
 - **Scroll wheel volume control**: Hover over the volume slider and scroll to adjust the volume.
+- **AirPods listening modes (experimental)**: Expand a supported device to select Transparency, Adaptive, or Noise Cancellation. Only reported modes are offered; routing and device priorities stay unchanged.
 - **System-style panel**: Designed after the macOS Sound menu. The menu bar icon reflects volume level, mute state, and connected headphone models.
 - **Offline device memory**: Disconnected devices remain in the list with last-seen timestamps, allowing you to organize priorities ahead of time.
 - **Lightweight and private**: Driven by CoreAudio hardware event notifications with no polling. Requires no microphone recording permissions, makes no network requests, and collects no telemetry.
@@ -83,7 +84,8 @@ SoundPin runs in the menu bar as a speaker icon:
 | Drag a device | Reorders priorities |
 | Scroll on volume slider | Adjusts output volume |
 | Keyboard (macOS 14+) | With Keyboard Navigation on, press Tab to focus and Space/Return to select |
-| Device ⋯ menu | Ignore device, never auto-select, or move between headphones and speakers |
+| Right-click a device row | Ignore device, never auto-select, or move between headphones and speakers |
+| AirPods disclosure arrow | Expand or collapse Listening Mode; click a mode to select it |
 | Top-right ⋯ menu | Toggle auto-switching, open at login, edit device list, switch language, quit |
 | Edit Device List | Displays disconnected devices for reordering or removing |
 | Sound Settings… | Opens macOS Sound settings |
@@ -102,6 +104,8 @@ defaults read io.github.realruian.SoundPin
 ```
 
 ## Known limitations
+
+- **Listening modes are experimental**: This uses undocumented Core Audio HAL properties checked at runtime. Listening tests have passed on one AirPods Pro 3 while connected but not the default output. Default-output trials were interrupted by route changes and remain unverified. Checkmarks reflect the system cache, not a hardware acknowledgement.
 
 - **Less common Bluetooth headphones**: Earbuds not matching the built-in keyword database may land in the speakers list initially. Select "Move to Headphones" from the device menu to fix this permanently.
 - **AirPlay**: Disconnected AirPlay destinations do not appear in the list.
@@ -128,6 +132,8 @@ The repository includes helper scripts:
 
 - `tools/render-preview.sh [output.png] [--demo] [--lang en|zh-Hans]`: Renders offline panel previews via SwiftUI without physical device changes.
 - `tools/check-devices.sh`: Tests device classification and icon rules against sample devices.
+- `tools/check-listening-modes.sh`: Checks supported modes, unknown values, and invalid-device guards without writing to real devices.
+- `tools/check-listening-mode-motion.sh`: Uses an isolated real MenuBarExtra to check intermediate disclosure heights, a fixed window anchor, rapid reversal, and Reduce Motion without creating an audio service.
 - `tools/check-settings.sh`: Checks how devices are remembered and marked "never select automatically", in a settings domain of its own.
 - `tools/check-events.sh`: Checks that a burst of device notifications is handled once, using test devices only this process sees.
 - `tools/check-voiceover.sh [--lang en|zh-Hans]`: Reads the panel's accessibility information without turning VoiceOver on and runs one row action (the terminal needs Accessibility permission).

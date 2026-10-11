@@ -9,6 +9,7 @@ import AppKit
 struct MenuBarView: View {
     @EnvironmentObject var audioManager: AudioManager
     @State private var deviceListHeight: CGFloat = 0
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -73,7 +74,15 @@ struct MenuBarView: View {
             }
             // A ScrollView has no height of its own, so size it to its content
             .frame(height: min(deviceListHeight, 460))
-            .onPreferenceChange(DeviceListHeightKey.self) { deviceListHeight = $0 }
+            .panelGeometryGroup()
+            .onPreferenceChange(DeviceListHeightKey.self) { height in
+                // Geometry reports the target layout. Animate that change once,
+                // allowing the window and its content to share the system spring.
+                guard abs(deviceListHeight - height) > 0.1 else { return }
+                let animation = deviceListHeight == 0 || reduceMotion ? nil
+                    : ListeningModeMotion.animation(expanding: height > deviceListHeight)
+                withAnimation(animation) { deviceListHeight = height }
+            }
 
             PanelDivider()
 
@@ -86,6 +95,8 @@ struct MenuBarView: View {
             .padding(.bottom, 4.5)
         }
         .frame(width: 308)
+        .panelGeometryGroup()
+        .panelWindowAnchor()
         .background(PanelPositioner())
     }
 }
@@ -107,6 +118,12 @@ extension Color {
     static let panelGlyph = tone(0.515)
     /// The device glyph inside a circle that is not selected
     static let panelIcon = tone(0.44)
+    /// Listening-mode symbols are lighter than the volume glyphs in the Sound menu.
+    /// Keep a separate role so tuning them does not change device/volume icons.
+    static let listeningModeIcon = tone(0.42)
+    /// Keep the same visible label tone on the darker listening-mode surface.
+    static let listeningModeLabel = tone(0.85)
+    static let listeningModeBackground = tone(0.04)
 }
 
 private struct DeviceListHeightKey: PreferenceKey {
@@ -116,8 +133,7 @@ private struct DeviceListHeightKey: PreferenceKey {
     }
 }
 
-/// Keeps the panel on screen and as close under the menu bar as the system's panels.
-/// MenuBarExtra leaves 3.5 pt there; the system's Sound and Wi-Fi panels leave 0.5 pt.
+/// Corrects screen overflow while leaving MenuBarExtra in charge of valid anchors.
 private struct PanelPositioner: NSViewRepresentable {
     func makeNSView(context: Context) -> NSView {
         PositionerView()
@@ -317,7 +333,7 @@ struct VolumeSliderView: View {
     @EnvironmentObject var audioManager: AudioManager
 
     var body: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 4) {
             Image(systemName: "speaker.fill")
                 .font(.system(size: 16))
                 .foregroundColor(.panelGlyph)
@@ -494,7 +510,7 @@ enum DeviceGlyph {
         if has("homepod") { return ["homepod.fill"] }
         if has("apple tv") { return ["appletv.fill", "tv"] }
         if has("vision pro") { return ["vision.pro", "headphones"] }
-        if has("macbook") { return ["laptopcomputer"] }
+        if has("macbook") { return ["macbook", "laptopcomputer"] }
         if has("mac mini") { return ["macmini.fill", "desktopcomputer"] }
         if has("mac studio") { return ["macstudio.fill", "desktopcomputer"] }
         if has("imac", "mac pro") { return ["desktopcomputer"] }

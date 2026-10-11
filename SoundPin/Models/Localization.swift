@@ -37,6 +37,13 @@ enum L10n {
     static var speakers: String { pick("Speakers", "扬声器") }
     static var microphones: String { pick("Microphones", "麦克风") }
     static var soundSettings: String { pick("Sound Settings…", "声音设置…") }
+    static var listeningMode: String { pick("Listening Mode", "听音模式") }
+    static var transparency: String { pick("Transparency", "通透") }
+    static var adaptive: String { pick("Adaptive", "自适应") }
+    static var noiseCancellation: String { pick("Noise Cancellation", "降噪") }
+    static var showListeningModes: String { pick("Show Listening Modes", "展开听音模式") }
+    static var hideListeningModes: String { pick("Hide Listening Modes", "收起听音模式") }
+    static var listeningModeFailed: String { pick("Couldn’t change the listening mode. Check that your AirPods are connected and try again.", "无法切换听音模式。请检查 AirPods 连接后重试。") }
     static var noDevices: String { pick("No Devices", "没有设备") }
     static var noVolumeControl: String { pick("This device has no volume control", "此设备不支持调节音量") }
     static var done: String { pick("Done", "完成") }

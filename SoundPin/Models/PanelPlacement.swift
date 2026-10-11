@@ -5,12 +5,10 @@ import CoreGraphics
 /// Keep the system's horizontal anchor unless it would leave the usable screen.
 enum PanelPlacement {
     static func origin(for panel: CGRect, screen: CGRect, visibleFrame: CGRect) -> CGPoint {
-        let gap: CGFloat = 0.5
+        // MenuBarExtra owns the top anchor, including its menu-bar gap. Moving an
+        // otherwise valid panel closer after each animated resize fights that
+        // anchor and produces a visible 3 pt oscillation. Only correct overflow.
         var y = panel.minY
-        let distance = visibleFrame.maxY - panel.maxY
-        if visibleFrame.maxY < screen.maxY, distance > gap + 0.25, distance < 12 {
-            y = visibleFrame.maxY - gap - panel.height
-        }
 
         let x = min(max(panel.minX, visibleFrame.minX),
                     max(visibleFrame.minX, visibleFrame.maxX - panel.width))

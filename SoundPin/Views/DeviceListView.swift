@@ -3,6 +3,8 @@ import CoreAudio
 import UniformTypeIdentifiers
 
 struct DeviceListView: View {
+    @EnvironmentObject var audioManager: AudioManager
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let devices: [AudioDevice]
     let currentDeviceId: AudioObjectID?
     let onMove: (IndexSet, Int) -> Void
@@ -15,6 +17,8 @@ struct DeviceListView: View {
     // Only track which item is being dragged and the target - not the offset
     @State private var draggingIndex: Int? = nil
     @State private var targetIndex: Int? = nil
+    @State private var expandedUID: String?
+    @State private var modeRequestFailed = false
 
     private let rowHeight: CGFloat = 32
 
@@ -45,18 +49,52 @@ struct DeviceListView: View {
                     rowHeight: rowHeight,
                     deviceCount: devices.count,
                     onDragStarted: {
-                        draggingIndex = index
+                        // Keep the existing fixed-height reorder calculation valid.
+                        var transaction = Transaction(animation: nil)
+                        transaction.disablesAnimations = true
+                        withTransaction(transaction) {
+                            expandedUID = nil
+                            draggingIndex = index
+                        }
                     },
                     onTargetChanged: { newTarget in
                         targetIndex = newTarget
                     },
                     onDragEnded: {
                         performMove(fromIndex: index)
+                    },
+                    isListeningModeExpanded: expandedUID == device.uid,
+                    onToggleListeningModes: listeningState(for: device) == nil ? nil : {
+                        let expanding = expandedUID != device.uid
+                        withAnimation(reduceMotion ? nil : ListeningModeMotion.animation(expanding: expanding)) {
+                            expandedUID = expanding ? device.uid : nil
+                        }
                     }
                 )
                 .zIndex(draggingIndex == index ? 100 : 0)
+                if let state = listeningState(for: device) {
+                    ListeningModeDisclosure(isExpanded: expandedUID == device.uid, state: state, reduceMotion: reduceMotion) { mode in
+                        modeRequestFailed = !audioManager.setListeningMode(mode, for: device)
+                    }
+                    .padding(.horizontal, -6)
+                }
             }
         }
+        .panelGeometryGroup()
+        .onAppear { audioManager.refreshListeningModes() }
+        .onReceive(audioManager.$listeningModes) { modes in
+            if let uid = expandedUID, modes[uid] == nil { expandedUID = nil }
+        }
+        .alert(L10n.listeningMode, isPresented: $modeRequestFailed) {
+            Button(L10n.done, role: .cancel) {}
+        } message: {
+            Text(L10n.listeningModeFailed)
+        }
+    }
+
+    private func listeningState(for device: AudioDevice) -> ListeningModeState? {
+        guard device.isConnected, device.type == .output, !isHiddenSection else { return nil }
+        return audioManager.listeningModes[device.uid]
     }
 
     private func isDropTarget(for index: Int) -> Bool {
@@ -81,6 +119,7 @@ struct DeviceListView: View {
 // Row wrapper that handles the drag gesture
 struct DraggableDeviceRow: View {
     @EnvironmentObject var audioManager: AudioManager
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let device: AudioDevice
     let index: Int
     let isSelected: Bool
@@ -100,6 +139,8 @@ struct DraggableDeviceRow: View {
     let onDragStarted: () -> Void
     let onTargetChanged: (Int?) -> Void
     let onDragEnded: () -> Void
+    var isListeningModeExpanded = false
+    var onToggleListeningModes: (() -> Void)?
 
     @State private var isHovering = false
     @State private var lastReportedTarget: Int? = nil
@@ -166,7 +207,7 @@ struct DraggableDeviceRow: View {
         return parts.joined(separator: L10n.listSeparator)
     }
 
-    /// The ⋯ menu, one array per group between dividers. VoiceOver gets the same list as actions.
+    /// The row context menu, one array per group between dividers. VoiceOver gets the same list as actions.
     private var menuActionGroups: [[RowAction]] {
         var groups: [[RowAction]] = []
 
@@ -245,12 +286,12 @@ struct DraggableDeviceRow: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            // Round device icon, filled with the accent color for the device in use
+            // The Sound menu uses system blue, independently of the user accent color.
             ZStack {
                 Circle()
-                    .fill(isActive ? Color.accentColor : Color.primary.opacity(0.1))
+                    .fill(isActive ? Color(nsColor: .systemBlue) : Color.primary.opacity(0.1))
                 Image(systemName: DeviceGlyph.symbol(for: device, category: category))
-                    .font(.system(size: 12, weight: .medium))
+                    .font(.system(size: 13, weight: .medium))
                     .foregroundColor(isActive ? .white : .panelIcon)
             }
             .frame(width: 26, height: 26)
@@ -283,42 +324,20 @@ struct DraggableDeviceRow: View {
 
             Spacer(minLength: 4)
 
-            // Actions menu - always reserve space to prevent layout shifts
-            ZStack {
-                // Invisible placeholder to reserve space
-                Image(systemName: "ellipsis.circle")
-                    .font(.system(size: 14))
-                    .frame(width: 28, height: 28)
-                    .opacity(0)
-
-                // Actual menu (shown on hover)
-                if isHovering && !isDragging {
-                    Group {
-                    Menu {
-                        ForEach(Array(menuActionGroups.enumerated()), id: \.offset) { index, group in
-                            if index > 0 {
-                                Divider()
-                            }
-                            ForEach(group) { action in
-                                Button(role: action.isDestructive ? .destructive : nil, action: action.perform) {
-                                    Label(action.title, systemImage: action.systemImage)
-                                }
-                            }
-                        }
-                    } label: {
-                        Image(systemName: "ellipsis.circle")
-                            .font(.system(size: 14))
-                            .foregroundColor(.secondary)
-                            .frame(width: 28, height: 28)
-                            .contentShape(Rectangle())
-                    }
-                    .menuStyle(.borderlessButton)
-                    }
-                    .transition(.opacity.combined(with: .scale(scale: 0.8)))
+            if let onToggleListeningModes {
+                Button(action: onToggleListeningModes) {
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundColor(.secondary)
+                        .rotationEffect(.degrees(isListeningModeExpanded ? 90 : 0))
+                        .animation(reduceMotion ? nil : ListeningModeMotion.animation(expanding: isListeningModeExpanded),
+                                   value: isListeningModeExpanded)
+                        .frame(width: 20, height: 28)
+                        .contentShape(Rectangle())
                 }
+                .buttonStyle(.plain)
+                .help(isListeningModeExpanded ? L10n.hideListeningModes : L10n.showListeningModes)
             }
-            .frame(width: 28)
-            .animation(.easeInOut(duration: 0.12), value: isHovering)
         }
         .padding(.leading, 8)
         .padding(.trailing, 4)
@@ -381,15 +400,31 @@ struct DraggableDeviceRow: View {
                     onDragEnded()
                 }
         )
+        .contextMenu {
+            ForEach(Array(menuActionGroups.enumerated()), id: \.offset) { index, group in
+                if index > 0 {
+                    Divider()
+                }
+                ForEach(group) { action in
+                    Button(role: action.isDestructive ? .destructive : nil, action: action.perform) {
+                        Label(action.title, systemImage: action.systemImage)
+                    }
+                }
+            }
+        }
         .modifier(RowKeyboardSupport(activate: select))
-        // VoiceOver reads the row as one button. The ⋯ menu shows on hover only and a drag
-        // needs a pointer, so both are offered as actions.
+        // VoiceOver reads the row as one button and exposes the context-menu
+        // commands and pointer-only reordering as named actions.
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(device.name)
         .accessibilityValue(accessibilityStatus)
         .accessibilityAddTraits(isActive ? [.isButton, .isSelected] : .isButton)
         .accessibilityAction(.default, select)
         .accessibilityActions {
+            if let onToggleListeningModes {
+                Button(isListeningModeExpanded ? L10n.hideListeningModes : L10n.showListeningModes,
+                       action: onToggleListeningModes)
+            }
             if let onMoveToTop {
                 Button(L10n.moveToTop, action: onMoveToTop)
             }
@@ -406,7 +441,7 @@ struct DraggableDeviceRow: View {
     }
 }
 
-/// One entry of a row's ⋯ menu
+/// One entry of a row's context menu
 private struct RowAction: Identifiable {
     let title: String
     let systemImage: String
