@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		A10000000000000000000012 /* PanelPlacement.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000012 /* PanelPlacement.swift */; };
 		A10000000000000000000001 /* SoundPinApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000001 /* SoundPinApp.swift */; };
 		A10000000000000000000002 /* AudioDevice.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000002 /* AudioDevice.swift */; };
 		A10000000000000000000003 /* AudioDeviceService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000003 /* AudioDeviceService.swift */; };
@@ -23,6 +24,7 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		A20000000000000000000012 /* PanelPlacement.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PanelPlacement.swift; sourceTree = "<group>"; };
 		A20000000000000000000001 /* SoundPinApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SoundPinApp.swift; sourceTree = "<group>"; };
 		A20000000000000000000002 /* AudioDevice.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioDevice.swift; sourceTree = "<group>"; };
 		A20000000000000000000003 /* AudioDeviceService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioDeviceService.swift; sourceTree = "<group>"; };
@@ -83,6 +85,7 @@
 				A20000000000000000000002 /* AudioDevice.swift */,
 				A20000000000000000000009 /* Headphones.swift */,
 				A20000000000000000000011 /* Localization.swift */,
+				A20000000000000000000012 /* PanelPlacement.swift */,
 			);
 			path = Models;
 			sourceTree = "<group>";
@@ -198,6 +201,7 @@
 				A10000000000000000000002 /* AudioDevice.swift in Sources */,
 				A10000000000000000000009 /* Headphones.swift in Sources */,
 				A10000000000000000000011 /* Localization.swift in Sources */,
+				A10000000000000000000012 /* PanelPlacement.swift in Sources */,
 				A10000000000000000000003 /* AudioDeviceService.swift in Sources */,
 				A10000000000000000000004 /* PriorityManager.swift in Sources */,
 				A10000000000000000000005 /* MenuBarView.swift in Sources */,
