@@ -28,6 +28,8 @@ final class SoundPanelController: NSObject {
         // The window keeps its size; the panel grows and shrinks inside it.
         hostingView.sizingOptions = []
         window.contentView = hostingView
+        // VoiceOver names the panel by its window title, as it reads "Control Center" for the Sound menu.
+        window.title = accessibilityLabel
         window.onCancel = { [weak self] in self?.close() }
 
         if #available(macOS 27.0, *) {

@@ -145,11 +145,10 @@ The repository includes helper scripts:
 - `tools/check-devices.sh`: Tests device classification and icon rules against sample devices.
 - `tools/check-listening-modes.sh`: Checks supported modes, unknown values, invalid-device guards, and partial listener registration, recovery and cleanup using simulated hardware. No real device writes.
 - `tools/check-listening-mode-requests.sh`: Checks pending requests, timeout, retry, disconnect cancellation, late notifications and bounded recovery using in-memory services and a virtual clock. It does not link the real listening-mode service.
-- `tools/check-listening-mode-motion.sh`: Uses an isolated real MenuBarExtra to check intermediate disclosure heights, a fixed window anchor, rapid reversal, and Reduce Motion without creating an audio service.
 - `tools/check-settings.sh`: Checks how devices are remembered and marked "never select automatically", using in-memory preferences without writing a preferences domain.
 - `tools/check-events.sh`: Checks that a burst of device notifications is handled once, using test devices only this process sees.
 - `tools/check-listening-mode-accessibility.sh`: verifies default mode actions, pending state, timeout and retry through Accessibility APIs in an isolated window with simulated devices; requires Accessibility permission.
-- `tools/check-panel-acceptance.sh [--reduce-motion] [--record]`: checks motion, accessibility actions and simulated requests in the real menu-bar panel. Requires Accessibility permission, plus Screen Recording for recording. Keep the desktop idle: dismissed menus or moving status items fail the check. This is an interactive diagnostic, not an unattended CI gate.
+- `tools/check-panel-acceptance.sh [--reduce-motion] [--record]`: checks expansion, rapid reversal and collapse (the panel window keeps its frame), accessibility actions and simulated requests in the real menu-bar panel. Requires Accessibility permission, plus Screen Recording for recording. Keep the desktop idle: dismissed menus or moving status items fail the check. This is an interactive diagnostic, not an unattended CI gate.
 - `tools/check-voiceover.sh [--lang en|zh-Hans]`: Reads the panel's accessibility information without turning VoiceOver on and runs one row action (the terminal needs Accessibility permission).
 - `tools/make-dmg.sh`: Builds a universal release binary and packages a DMG.
 

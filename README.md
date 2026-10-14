@@ -144,11 +144,10 @@ defaults delete app.audioprioritybar
 - `tools/check-devices.sh`：测试常见音频设备的自动归类与图标匹配规则。
 - `tools/check-listening-modes.sh`：检查听音模式支持位、未知值、无效设备保护，以及模拟硬件上的部分监听注册失败、恢复和清理；不向真实设备写入模式。
 - `tools/check-listening-mode-requests.sh`：通过内存服务与虚拟时钟检查待完成请求、超时、重试、断连取消、迟到通知和有限恢复；不链接真实听音模式服务。
-- `tools/check-listening-mode-motion.sh`：在独立的真实 MenuBarExtra 中检查展开收起的连续高度、固定锚点、快速反向操作和“减少动态效果”，不创建音频服务。
 - `tools/check-settings.sh`：检查设备记忆与“永不自动选用”的存取逻辑，使用内存偏好存储，不写入任何偏好设置域。
 - `tools/check-events.sh`：检查连续的设备变化通知是否被合并处理，使用仅本进程可见的测试设备。
 - `tools/check-listening-mode-accessibility.sh`：在隔离窗口中通过辅助功能 API 检查听音模式默认操作、等待状态、超时与重试；仅使用模拟设备，需要辅助功能权限。
-- `tools/check-panel-acceptance.sh [--reduce-motion] [--record]`：在真实菜单栏面板中检查动画、辅助功能操作和模拟请求；需要辅助功能权限，录制还需要屏幕录制权限。测试时需保持桌面空闲，菜单被关闭或其他菜单栏项目移动会使检查失败；不作为无人值守 CI 检查。
+- `tools/check-panel-acceptance.sh [--reduce-motion] [--record]`：在真实菜单栏面板中检查展开、快速反向和收起（窗口位置与大小保持不变）、辅助功能操作和模拟请求；需要辅助功能权限，录制还需要屏幕录制权限。测试时需保持桌面空闲，菜单被关闭或其他菜单栏项目移动会使检查失败；不作为无人值守 CI 检查。
 - `tools/check-voiceover.sh [--lang en|zh-Hans]`：不开启旁白，直接读取面板的辅助功能信息并执行一次设备行操作（终端需要“辅助功能”权限）。
 - `tools/make-dmg.sh`：构建 Universal 通用版本并打包生成 DMG。
 

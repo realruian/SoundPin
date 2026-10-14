@@ -32,19 +32,6 @@ extension View {
             self
         }
     }
-
-    @ViewBuilder
-    func panelWindowAnchor() -> some View {
-        if #available(macOS 27.0, *) {
-            backgroundStyle(.regularMaterial)
-                .windowResizeAnchor(.topLeading)
-        } else if #available(macOS 26.0, *) {
-            backgroundStyle(.ultraThinMaterial)
-                .windowResizeAnchor(.topLeading)
-        } else {
-            self
-        }
-    }
 }
 
 /// Keep the subtree mounted for interruption and accessibility state. SwiftUI
