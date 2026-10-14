@@ -118,11 +118,8 @@ struct MenuBarView: View {
                 catch { return }
             }
         }
-        .frame(width: 308)
+        .frame(width: PanelPlacement.width)
         .panelGeometryGroup()
-        .panelWindowAnchor()
-        .background(PanelPositioner())
-        .background(PanelWindowChrome())
         .alert(L10n.deviceSwitchFailed, isPresented: Binding(
             get: { audioManager.routingFailure != nil },
             set: { if !$0 { audioManager.routingFailure = nil } }
@@ -166,88 +163,6 @@ private struct DeviceListHeightKey: PreferenceKey {
     static var defaultValue: CGFloat = 0
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
         value = max(value, nextValue())
-    }
-}
-
-/// Corrects screen overflow while leaving MenuBarExtra in charge of valid anchors.
-private struct PanelPositioner: NSViewRepresentable {
-    func makeNSView(context: Context) -> NSView {
-        PositionerView()
-    }
-
-    func updateNSView(_ nsView: NSView, context: Context) {}
-
-    final class PositionerView: NSView {
-        private var observers: [NSObjectProtocol] = []
-        private var pendingReposition: DispatchWorkItem?
-
-        override func viewDidMoveToWindow() {
-            super.viewDidMoveToWindow()
-            stopObserving()
-            guard let window else { return }
-            let names = [
-                NSWindow.didMoveNotification,
-                NSWindow.didResizeNotification,
-                NSWindow.didChangeScreenNotification,
-                NSWindow.didBecomeKeyNotification,
-                NSWindow.didChangeOcclusionStateNotification,
-            ]
-            for name in names {
-                observers.append(NotificationCenter.default.addObserver(forName: name, object: window, queue: .main) { [weak self] _ in
-                    self?.scheduleReposition()
-                })
-            }
-            observers.append(NotificationCenter.default.addObserver(
-                forName: NSApplication.didChangeScreenParametersNotification,
-                object: nil, queue: .main
-            ) { [weak self] _ in
-                self?.scheduleReposition()
-            })
-            scheduleReposition()
-        }
-
-        private func scheduleReposition() {
-            // MenuBarExtra can still be placing/resizing its window in the notification.
-            // Wait until that layout finishes instead of moving it reentrantly.
-            guard pendingReposition == nil else { return }
-            let work = DispatchWorkItem { [weak self] in
-                guard let self else { return }
-                self.pendingReposition = nil
-                self.reposition()
-            }
-            pendingReposition = work
-            DispatchQueue.main.async(execute: work)
-        }
-
-        private func reposition() {
-            guard let window, window.isVisible else { return }
-            // A removed display can leave the window without an associated screen.
-            let screen = window.screen ?? NSScreen.screens.min { first, second in
-                func distance(to screen: NSScreen) -> CGFloat {
-                    let bounds = screen.visibleFrame
-                    let dx = max(bounds.minX - window.frame.midX, 0, window.frame.midX - bounds.maxX)
-                    let dy = max(bounds.minY - window.frame.midY, 0, window.frame.midY - bounds.maxY)
-                    return dx * dx + dy * dy
-                }
-                return distance(to: first) < distance(to: second)
-            }
-            guard let screen else { return }
-            let origin = PanelPlacement.origin(for: window.frame, screen: screen.frame,
-                                               visibleFrame: screen.visibleFrame)
-            guard origin != window.frame.origin else { return }
-            window.setFrameOrigin(origin)
-        }
-
-        private func stopObserving() {
-            pendingReposition?.cancel()
-            pendingReposition = nil
-            observers.forEach(NotificationCenter.default.removeObserver)
-            observers = []
-        }
-
-        deinit {
-            stopObserving()
-        }
     }
 }
 

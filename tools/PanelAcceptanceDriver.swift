@@ -64,7 +64,7 @@ func bounds() -> (CGRect, CGWindowID)? {
     let list = CGWindowListCopyWindowInfo(.optionOnScreenOnly, 0) as? [[String: Any]] ?? []
     for item in list where (item[kCGWindowOwnerPID as String] as? Int32) == pid {
         guard let dictionary = item[kCGWindowBounds as String] as? [String: Any],
-              let r = CGRect(dictionaryRepresentation: dictionary as CFDictionary), abs(r.width - 308) < 1, r.height > 100,
+              let r = CGRect(dictionaryRepresentation: dictionary as CFDictionary), abs(r.width - 372) < 1, r.height > 100,
               let id = item[kCGWindowNumber as String] as? UInt32 else { continue }
         return (r, id)
     }
@@ -78,15 +78,16 @@ func sample(_ phase: String, duration: Double) {
         let frames = windows.compactMap { item -> CGRect? in
             guard let d=item[kCGWindowBounds as String] as? [String:Any] else{return nil};return CGRect(dictionaryRepresentation:d as CFDictionary)
         }
-        if let r = frames.first(where:{abs($0.width-308)<1 && $0.height>100}) {
-            let shadow = windows.compactMap { item -> CGRect? in
-                guard let d=item[kCGWindowBounds as String] as? [String:Any], let frame=CGRect(dictionaryRepresentation:d as CFDictionary),abs(frame.width-372)<1 else{return nil};return frame
-            }.first
-            let aligned = shadow.map { abs($0.minX-(r.minX-32))<1 && abs($0.minY-(r.minY-32))<1 && abs($0.height-(r.height+64))<1 } ?? false
-            samples.append(["shadowHeight":shadow?.height ?? -1,"shadowTop":shadow?.minY ?? -1,"shadowAligned":aligned,"phase":phase,"time":Date().timeIntervalSince(start),"top":Double(r.minY),"left":Double(r.minX),"height":Double(r.height)])
+        // The window keeps its frame; the panel inside it grows and shrinks.
+        if let r = frames.first(where:{abs($0.width-372)<1 && $0.height>100}) {
+            samples.append(["phase":phase,"time":Date().timeIntervalSince(start),"top":Double(r.minY),"left":Double(r.minX),"height":Double(r.height)])
         }
         usleep(8_000)
     }
+}
+/// The bottom of the panel's last row, which follows the panel's laid-out height.
+func panelBottom() -> CGFloat? {
+    window().flatMap { find($0) { string(attr($0, "AXTitle")) == "Sound Settings…" || string(attr($0, "AXDescription")) == "Sound Settings…" } }.flatMap(rect)?.maxY
 }
 func capture(_ name: String) {
     guard let (_, id) = bounds() else { return }
@@ -131,7 +132,7 @@ if recording {
     clickMenu()
     for _ in 0..<30 { if row("AirPods Pro") != nil { break }; usleep(100_000) }
 }
-guard let podsRow = row("AirPods Pro"), let (initial, _) = bounds() else {
+guard let podsRow = row("AirPods Pro"), let (initial, _) = bounds(), let initialBottom = panelBottom() else {
     print("Reopen diagnostics: bounds=\(String(describing: bounds())), AX windows=\((attr(app, "AXWindows") as? [AXUIElement] ?? []).map { String(describing: rect($0)) })")
     video?.waitUntilExit(); exit(2)
 }
@@ -142,46 +143,46 @@ sample("expand", duration: 0.8)
 check(mode(3) != nil && mode(4) != nil && mode(2) != nil, "expanded production panel exposes all supported modes")
 check(mode(3).map { actions($0).contains("AXPress") } ?? false, "mode button exposes its default VoiceOver action")
 
-guard let expandedHeight = bounds()?.0.height else {
+guard let expandedBottom = panelBottom(), expandedBottom > initialBottom + 50 else {
     print("Menu closed during expansion diagnostics"); video?.waitUntilExit(); exit(2)
 }
 check(perform(row("AirPods Pro"), "Hide Listening Modes"), "VoiceOver collapse action dispatches")
 sample("reverse-collapse", duration: 0.10)
 check(perform(row("AirPods Pro"), "Show Listening Modes"), "rapid reverse expand action dispatches")
 sample("reverse-expand", duration: 0.8)
-check(bounds().map { abs($0.0.height - expandedHeight) < 1 } ?? false, "rapid reversal settles at expanded height")
+check(panelBottom().map { abs($0 - expandedBottom) < 1 } ?? false, "rapid reversal settles at expanded height")
 check(perform(row("AirPods Pro"), "Hide Listening Modes"), "collapse dispatches after reversal")
 sample("collapse", duration: 0.8)
-check((bounds().map { abs($0.0.height - initial.height) < 1 } ?? false) && mode(3) == nil, "collapse restores window and removes mode controls")
-let stable = samples.allSatisfy { abs(($0["top"] as! Double) - initial.minY) <= 1 && abs(($0["left"] as! Double) - initial.minX) <= 1 }
-check(stable, "actual MenuBarExtra keeps its top and left anchors")
-let mids = samples.filter { $0["phase"] as? String == "expand" && ($0["height"] as! Double) > initial.height + 1 && ($0["height"] as! Double) < expandedHeight - 1 }
-check(reduced ? mids.isEmpty : mids.count >= 3, reduced ? "reduced motion skips intermediate window heights" : "expansion contains intermediate window frames")
+check((panelBottom().map { abs($0 - initialBottom) < 1 } ?? false) && mode(3) == nil, "collapse restores panel height and removes mode controls")
+// The motion itself happens inside the window; check it in motion.mov (--record).
+let stable = samples.allSatisfy { abs(($0["top"] as! Double) - initial.minY) <= 1 && abs(($0["left"] as! Double) - initial.minX) <= 1
+    && abs(($0["height"] as! Double) - initial.height) <= 1 }
+check(stable, "panel window keeps its frame throughout expansion and reversal")
 video?.waitUntilExit()
 if let video { check(video.terminationStatus == 0 && FileManager.default.fileExists(atPath: output + "/motion.mov"), "test panel recording saved") }
-// Focused window-chrome regression: real MenuBarExtra plus its noninteractive shadow.
+// Focused window regression: Escape closes, and reopening creates exactly one panel window.
 if args.contains("--chrome-only") {
-    check(samples.allSatisfy{$0["shadowAligned"] as? Bool == true}, "shadow follows actual window throughout expansion and reversal")
-    func shadowCount()->Int {
- (CGWindowListCopyWindowInfo(.optionOnScreenOnly,0) as? [[String:Any]] ?? []).filter { item in
-  guard item[kCGWindowOwnerPID as String] as? Int32 == pid, let d=item[kCGWindowBounds as String] as? [String:Any],let r=CGRect(dictionaryRepresentation:d as CFDictionary) else{return false};return abs(r.width-372)<1
- }.count
-}
+    func panelCount() -> Int {
+        (CGWindowListCopyWindowInfo(.optionOnScreenOnly,0) as? [[String:Any]] ?? []).filter { item in
+            guard item[kCGWindowOwnerPID as String] as? Int32 == pid, let d=item[kCGWindowBounds as String] as? [String:Any],
+                  let r=CGRect(dictionaryRepresentation:d as CFDictionary) else { return false }
+            return abs(r.width-372)<1
+        }.count
+    }
     for cycle in 1...3 {
- CGEvent(keyboardEventSource:nil,virtualKey:53,keyDown:true)?.post(tap:.cghidEventTap)
- CGEvent(keyboardEventSource:nil,virtualKey:53,keyDown:false)?.post(tap:.cghidEventTap)
- usleep(350_000)
- check(bounds()==nil && shadowCount()==0, "Escape dismisses menu and shadow, cycle \(cycle)")
- clickMenu();usleep(500_000)
- check(bounds() != nil && shadowCount()==1,"reopen creates exactly one shadow, cycle \(cycle)")
-}
-    let payload: [String: Any] = ["checks":checks,"samples":samples,"reduced":reduced,"initialHeight":initial.height,"expandedHeight":expandedHeight]
+        CGEvent(keyboardEventSource:nil,virtualKey:53,keyDown:true)?.post(tap:.cghidEventTap)
+        CGEvent(keyboardEventSource:nil,virtualKey:53,keyDown:false)?.post(tap:.cghidEventTap)
+        usleep(350_000)
+        check(panelCount()==0, "Escape dismisses the panel, cycle \(cycle)")
+        clickMenu();usleep(500_000)
+        check(panelCount()==1,"reopen creates exactly one panel window, cycle \(cycle)")
+    }
+    let payload: [String: Any] = ["checks":checks,"samples":samples,"reduced":reduced,"initialBottom":initialBottom,"expandedBottom":expandedBottom]
     try! JSONSerialization.data(withJSONObject:payload,options:.prettyPrinted).write(to:URL(fileURLWithPath:output+"/results.json"))
     clickMenu()
     exit(checks.allSatisfy{$0["passed"] as? Bool == true} ? 0:1)
 }
 // Reopen after recording before checking production row actions.
-_ = AXUIElementSetAttributeValue(app, "AXFrontmost" as CFString, kCFBooleanTrue)
 usleep(500_000)
 if bounds() == nil { clickMenu(); usleep(600_000) }
 check(window() != nil, "test menu is visible before row action checks")
@@ -203,7 +204,7 @@ check(mode(3).map { string(attr($0,"AXValue")) == "Switching…" } ?? false,"pen
 usleep(3_700_000)
 check(row("Retry") != nil || window().flatMap { find($0) { string(attr($0,"AXTitle")) == "Retry" } } != nil,"timeout exposes a retry control")
 capture("timeout")
-let payload: [String: Any] = ["checks":checks,"samples":samples,"reduced":reduced,"initialHeight":initial.height,"expandedHeight":expandedHeight,"captureLeft":captureLeft,"captureTop":Int(preflight.minY - 10)]
+let payload: [String: Any] = ["checks":checks,"samples":samples,"reduced":reduced,"initialBottom":initialBottom,"expandedBottom":expandedBottom,"captureLeft":captureLeft,"captureTop":Int(preflight.minY - 10)]
 try! JSONSerialization.data(withJSONObject: payload, options:.prettyPrinted).write(to:URL(fileURLWithPath:output + "/results.json"))
 clickMenu()
 exit(checks.allSatisfy { $0["passed"] as? Bool == true } ? 0 : 1)

@@ -3,9 +3,7 @@ import CoreAudio
 
 @main
 struct SoundPinApp: App {
-    @StateObject private var audioManager = AudioManager(deviceService: AudioDeviceService(),
-        listeningModeService: ListeningModeService(), priorityManager: PriorityManager(),
-        batteryService: BluetoothBatteryService())
+    @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
 
     init() {
         // Before anything reads the settings
@@ -13,15 +11,23 @@ struct SoundPinApp: App {
     }
     
     var body: some Scene {
-        MenuBarExtra {
-            MenuBarView()
-                .environmentObject(audioManager)
-        } label: {
-            // One Image only: a label made of several views did not show up reliably
-            Image(systemName: audioManager.menuBarSymbol.name, variableValue: audioManager.menuBarSymbol.value)
-                .accessibilityLabel(L10n.appName)
+        // The menu bar item and panel are AppKit (SoundPanelController): a MenuBarExtra window
+        // is only as large as its content, which leaves no room for the glass's shadow.
+        MenuBarExtra(L10n.appName, systemImage: "speaker.wave.3.fill", isInserted: .constant(false)) {
+            EmptyView()
         }
-        .menuBarExtraStyle(.window)
+    }
+}
+
+@MainActor
+final class AppDelegate: NSObject, NSApplicationDelegate {
+    private var panel: SoundPanelController?
+
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        let audioManager = AudioManager(deviceService: AudioDeviceService(),
+            listeningModeService: ListeningModeService(), priorityManager: PriorityManager(),
+            batteryService: BluetoothBatteryService())
+        panel = SoundPanelController(audioManager: audioManager)
     }
 }
 

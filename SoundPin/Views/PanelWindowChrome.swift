@@ -1,133 +1,272 @@
 import AppKit
+import Combine
 import SwiftUI
 
-/// A non-interactive companion draws only outside the real MenuBarExtra window.
-/// AppKit continues to own the menu's focus, dismissal, placement and animations.
-struct PanelWindowChrome: NSViewRepresentable {
-    func makeNSView(context: Context) -> Attachment { Attachment() }
-    func updateNSView(_ view: Attachment, context: Context) {}
-    static func dismantleNSView(_ view: Attachment, coordinator: ()) { view.detach() }
+/// The Sound panel, built the way Control Center builds its menus: a transparent window larger
+/// than the panel. The glass is the system's own and draws its own shadow and edge in the room
+/// around the panel; nothing here draws a shadow or border of its own. A MenuBarExtra window is
+/// exactly as large as its content, which cuts that shadow off.
+@MainActor
+final class SoundPanelController: NSObject {
+    private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+    private let window = SoundPanelWindow()
+    private let hostingView: PanelHostingView
+    private let content: AnyView
+    private let symbol: () -> (name: String, value: Double?)
+    private let accessibilityLabel: String
+    private var cancellables: Set<AnyCancellable> = []
+    private var monitors: [Any] = []
+    private var observers: [NSObjectProtocol] = []
 
-    final class Attachment: NSView {
-        private weak var owner: NSWindow?
-        private var originalShadow = true
-        private var shadowWindow: NSPanel?
-        private var borderView: BorderView?
-        private var observers: [NSObjectProtocol] = []
+    init(content: some View, changes: AnyPublisher<Void, Never>,
+         accessibilityLabel: String, symbol: @escaping () -> (name: String, value: Double?)) {
+        self.symbol = symbol
+        self.accessibilityLabel = accessibilityLabel
+        self.content = AnyView(content)
+        hostingView = PanelHostingView(rootView: AnyView(EmptyView()))
+        super.init()
+        // The window keeps its size; the panel grows and shrinks inside it.
+        hostingView.sizingOptions = []
+        window.contentView = hostingView
+        window.onCancel = { [weak self] in self?.close() }
 
-        override func viewDidMoveToWindow() {
-            super.viewDidMoveToWindow()
-            guard window !== owner else { return }
-            detach()
-            guard let window, window.styleMask.contains(.nonactivatingPanel) else { return }
-            owner = window
-            originalShadow = window.hasShadow
-            let shadow = ShadowPanel(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
-            shadow.title = "SoundPin panel shadow"
-            shadow.isReleasedWhenClosed = false
-            shadow.backgroundColor = .clear
-            shadow.isOpaque = false
-            shadow.hasShadow = false
-            shadow.ignoresMouseEvents = true
-            shadow.hidesOnDeactivate = false
-            shadow.animationBehavior = .none
-            shadow.collectionBehavior = [.transient, .ignoresCycle, .fullScreenAuxiliary]
-            shadow.contentView = ShadowView()
-            shadow.setAccessibilityElement(false)
-            shadowWindow = shadow
-            let border = BorderView()
-            if let frameView = window.contentView?.superview {
-                border.frame = frameView.bounds
-                border.autoresizingMask = [.width, .height]
-                frameView.addSubview(border, positioned: .above, relativeTo: nil)
-            }
-            borderView = border
-            window.hasShadow = false
-            for name in [NSWindow.didResizeNotification, NSWindow.didMoveNotification,
-                         NSWindow.didBecomeKeyNotification, NSWindow.didChangeOcclusionStateNotification,
-                         NSWindow.didChangeScreenNotification] {
-                observers.append(NotificationCenter.default.addObserver(forName: name, object: window, queue: .main) { [weak self] _ in
-                    self?.synchronize()
-                })
-            }
-            observers.append(NotificationCenter.default.addObserver(forName: NSWindow.willCloseNotification, object: window, queue: .main) { [weak self] _ in self?.detach() })
-            synchronize()
+        if #available(macOS 27.0, *) {
+            // The menu bar opens and closes the panel and shows the item pressed meanwhile, as for
+            // its own menus; this also ends the panel when another menu bar item is opened.
+            statusItem.expandedInterfaceDelegate = self
+        } else if let button = statusItem.button {
+            button.target = self
+            button.action = #selector(toggle)
+            // Opens on mouse down, like the system's menu bar items
+            button.sendAction(on: [.leftMouseDown, .rightMouseDown])
         }
-
-        private func synchronize() {
-            guard let owner, let shadowWindow else { return }
-            let frame = owner.frame.insetBy(dx: -ShadowView.margin, dy: -ShadowView.margin)
-            if shadowWindow.frame != frame { shadowWindow.setFrame(frame, display: true) }
-            shadowWindow.appearance = owner.effectiveAppearance
-            borderView?.appearance = owner.effectiveAppearance
-            if owner.isVisible {
-                if shadowWindow.parent !== owner { owner.addChildWindow(shadowWindow, ordered: .below) }
-            } else {
-                if shadowWindow.parent === owner { owner.removeChildWindow(shadowWindow) }
-                shadowWindow.orderOut(nil)
-            }
-        }
-
-        func detach() {
-            observers.forEach(NotificationCenter.default.removeObserver)
-            observers.removeAll()
-            borderView?.removeFromSuperview()
-            borderView = nil
-            if let shadowWindow {
-                shadowWindow.parent?.removeChildWindow(shadowWindow)
-                shadowWindow.orderOut(nil)
-                shadowWindow.close()
-            }
-            shadowWindow = nil
-            owner?.hasShadow = originalShadow
-            owner = nil
-        }
-        deinit { detach() }
+        statusItem.button?.setAccessibilityLabel(accessibilityLabel)
+        updateButton()
+        // objectWillChange fires before the change; read the new state on the next turn.
+        changes.receive(on: RunLoop.main).sink { [weak self] in self?.updateButton() }.store(in: &cancellables)
     }
 
-    final class ShadowPanel: NSPanel {
-        override var canBecomeKey: Bool { false }
-        override var canBecomeMain: Bool { false }
+    convenience init(audioManager: AudioManager) {
+        self.init(content: MenuBarView().environmentObject(audioManager),
+                  changes: audioManager.objectWillChange.map { _ in }.eraseToAnyPublisher(),
+                  accessibilityLabel: L10n.appName,
+                  symbol: { audioManager.menuBarSymbol })
     }
 
-    final class BorderView: NSView {
-        override func hitTest(_ point: NSPoint) -> NSView? { nil }
-        override func isAccessibilityElement() -> Bool { false }
-        override func viewDidChangeEffectiveAppearance() {
-            super.viewDidChangeEffectiveAppearance()
-            needsDisplay = true
+    private var shownSymbol: (name: String, value: Double?)?
+
+    private func updateButton() {
+        guard let button = statusItem.button else { return }
+        let (name, value) = symbol()
+        if let shown = shownSymbol, shown.name == name, shown.value == value { return }
+        shownSymbol = (name, value)
+        let image = value.map { NSImage(systemSymbolName: name, variableValue: $0, accessibilityDescription: accessibilityLabel) }
+            ?? NSImage(systemSymbolName: name, accessibilityDescription: accessibilityLabel)
+        image?.isTemplate = true
+        button.image = image
+    }
+
+    var isOpen: Bool { window.isVisible }
+
+    /// Before macOS 27, the item's own action opens and closes the panel.
+    @objc func toggle() {
+        isOpen ? close() : open()
+    }
+
+    /// The menu bar item in screen coordinates
+    private var itemFrame: CGRect? {
+        guard let button = statusItem.button, let window = button.window else { return nil }
+        return window.convertToScreen(button.convert(button.bounds, to: nil))
+    }
+
+    func open() {
+        guard let buttonWindow = statusItem.button?.window, let item = itemFrame,
+              let screen = buttonWindow.screen ?? NSScreen.main else { return }
+        let layout = PanelPlacement.layout(itemFrame: item, itemWindowFrame: buttonWindow.frame,
+                                           screenFrame: screen.frame, visibleFrame: screen.visibleFrame)
+        let hostingView = hostingView
+        hostingView.rootView = AnyView(SoundPanelRoot(content: content, topInset: layout.topInset) {
+            hostingView.panelFrame = $0
+        })
+        window.setFrame(layout.windowFrame, display: true)
+        window.makeKeyAndOrderFront(nil)
+        if #unavailable(macOS 27.0) {
+            DispatchQueue.main.async { [weak self] in self?.statusItem.button?.highlight(true) }
         }
-        override func draw(_ dirtyRect: NSRect) {
-            let dark = effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
-            let contrast = NSWorkspace.shared.accessibilityDisplayShouldIncreaseContrast
-            (dark ? NSColor.white.withAlphaComponent(contrast ? 0.5 : 0.18) : NSColor.black.withAlphaComponent(contrast ? 0.4 : 0.16)).setStroke()
-            let path = NSBezierPath(roundedRect: bounds.insetBy(dx: 0.25, dy: 0.25), xRadius: 16, yRadius: 16)
-            path.lineWidth = 0.5
-            path.stroke()
+        startObserving()
+    }
+
+    /// Closing from the panel's side (Escape, a click outside). On macOS 27 the menu bar is told,
+    /// and it ends the session, which hides the panel.
+    func close() {
+        if #available(macOS 27.0, *), let session = statusItem.expandedInterfaceSession {
+            session.cancel()
+        } else {
+            hide()
         }
     }
 
-    final class ShadowView: NSView {
-        static let margin: CGFloat = 32
-        override func isAccessibilityElement() -> Bool { false }
-        override func draw(_ dirtyRect: NSRect) {
-            NSGraphicsContext.saveGraphicsState()
-            defer { NSGraphicsContext.restoreGraphicsState() }
-            let body = NSBezierPath(roundedRect: bounds.insetBy(dx: Self.margin, dy: Self.margin), xRadius: 16, yRadius: 16)
-            // Keep the material's backdrop untouched: no pixels under the menu body.
-            let outside = NSBezierPath(rect: bounds)
-            outside.append(body)
-            outside.windingRule = .evenOdd
-            outside.addClip()
-            let shadow = NSShadow()
-            // Tuned against captured Sound-menu edges; these are our drawing values,
-            // not undocumented Apple window-server parameters.
-            shadow.shadowColor = NSColor.black.withAlphaComponent(0.12)
-            shadow.shadowBlurRadius = 24
-            shadow.shadowOffset = NSSize(width: 0, height: -4)
-            shadow.set()
-            NSColor.black.setFill()
-            body.fill()
+    private func hide() {
+        guard isOpen else { return }
+        stopObserving()
+        window.orderOut(nil)
+        if #unavailable(macOS 27.0) {
+            statusItem.button?.highlight(false)
         }
+    }
+
+    private func startObserving() {
+        stopObserving()
+        // Clicks in other apps, on the desktop or in the menu bar close the panel. A click on this
+        // app's own item also arrives here first; the item itself closes the panel then, so closing
+        // here as well would reopen it.
+        if let monitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown], handler: { [weak self] _ in
+            guard let self else { return }
+            if let item = self.itemFrame, item.contains(NSEvent.mouseLocation) { return }
+            self.close()
+        }) { monitors.append(monitor) }
+        // In this app: a click in the transparent room around the panel closes it, as Control Center does.
+        if let monitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown, .keyDown], handler: { [weak self] event in
+            guard let self else { return event }
+            if event.type == .keyDown {
+                if event.keyCode == 53, event.window === self.window { self.close(); return nil }
+                return event
+            }
+            if event.window === self.window, !self.hostingView.panelContains(event.locationInWindow) {
+                self.close()
+                return nil
+            }
+            return event
+        }) { monitors.append(monitor) }
+        let center = NotificationCenter.default
+        observers.append(NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.activeSpaceDidChangeNotification, object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.close() }
+            })
+        observers.append(center.addObserver(forName: NSApplication.didChangeScreenParametersNotification,
+                                            object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.close() }
+        })
+    }
+
+    private func stopObserving() {
+        monitors.forEach(NSEvent.removeMonitor)
+        monitors.removeAll()
+        observers.forEach {
+            NotificationCenter.default.removeObserver($0)
+            NSWorkspace.shared.notificationCenter.removeObserver($0)
+        }
+        observers.removeAll()
+    }
+}
+
+@available(macOS 27.0, *)
+extension SoundPanelController: @preconcurrency NSStatusItemExpandedInterfaceDelegate {
+    func statusItem(_ statusItem: NSStatusItem, didBegin session: NSStatusItemExpandedInterfaceSession) {
+        open()
+    }
+
+    func statusItemDidEndExpandedInterfaceSession(_ statusItem: NSStatusItem, animated: Bool) {
+        hide()
+    }
+}
+
+/// Places the panel content inside the larger transparent window.
+private struct SoundPanelRoot<Content: View>: View {
+    let content: Content
+    let topInset: CGFloat
+    let onPanelFrame: (CGRect) -> Void
+
+    var body: some View {
+        content
+            .panelSurface()
+            .background(GeometryReader { proxy in
+                // Reported directly: a preference change was not delivered to the hosting view.
+                Color.clear
+                    .onAppear { onPanelFrame(proxy.frame(in: .global)) }
+                    .onChange(of: proxy.frame(in: .global)) { onPanelFrame($0) }
+            })
+            .padding(.top, topInset)
+            .padding(.horizontal, PanelPlacement.sideInset)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+    }
+}
+
+extension View {
+    /// The panel's background. On macOS 26 and later it is the system glass, which also draws the
+    /// panel's shadow and edge; measured against the Sound menu these match it with nothing added.
+    @ViewBuilder
+    func panelSurface() -> some View {
+        let shape = RoundedRectangle(cornerRadius: PanelPlacement.cornerRadius, style: .continuous)
+        if #available(macOS 26.0, *) {
+            glassEffect(.regular, in: shape)
+        } else {
+            // Earlier systems have no glass. A menu material with the window shadow values AppKit
+            // gives MenuBarExtra (density 0.25, radius 8, offset 4); not compared on those systems.
+            background(PanelMaterial().clipShape(shape))
+                .background {
+                    shape.fill(Color.black)
+                        .shadow(color: .black.opacity(0.25), radius: 8, x: 0, y: 4)
+                        .mask(OutsideShape(cornerRadius: PanelPlacement.cornerRadius).fill(style: FillStyle(eoFill: true)))
+                }
+                .overlay(shape.strokeBorder(Color.primary.opacity(0.12), lineWidth: 0.5))
+        }
+    }
+}
+
+/// Everything except a rounded rectangle, so a shadow can be drawn without a fill under the panel.
+private struct OutsideShape: Shape {
+    let cornerRadius: CGFloat
+    func path(in rect: CGRect) -> Path {
+        var path = Path(rect.insetBy(dx: -PanelPlacement.sideInset * 2, dy: -PanelPlacement.sideInset * 2))
+        path.addRoundedRect(in: rect, cornerSize: CGSize(width: cornerRadius, height: cornerRadius), style: .continuous)
+        return path
+    }
+}
+
+private struct PanelMaterial: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSVisualEffectView {
+        let view = NSVisualEffectView()
+        view.material = .menu
+        view.blendingMode = .behindWindow
+        view.state = .active
+        return view
+    }
+    func updateNSView(_ view: NSVisualEffectView, context: Context) {}
+}
+
+/// The room around the panel belongs to its shadow; clicks there close the panel.
+final class PanelHostingView: NSHostingView<AnyView> {
+    /// The panel as SwiftUI laid it out, in this view's coordinates.
+    var panelFrame: CGRect = .zero
+
+    func panelContains(_ pointInWindow: NSPoint) -> Bool {
+        convert(panelFrame, to: nil).contains(pointInWindow)
+    }
+}
+
+final class SoundPanelWindow: NSPanel {
+    var onCancel: (() -> Void)?
+
+    init() {
+        super.init(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel],
+                   backing: .buffered, defer: true)
+        isOpaque = false
+        backgroundColor = .clear
+        // The glass draws the shadow inside the window; a window shadow would be a second one.
+        hasShadow = false
+        // Menu level, as the Sound menu (101). Setting isFloatingPanel would lower it to floating.
+        level = .popUpMenu
+        hidesOnDeactivate = false
+        isReleasedWhenClosed = false
+        becomesKeyOnlyIfNeeded = false
+        collectionBehavior = [.transient, .ignoresCycle, .fullScreenAuxiliary, .moveToActiveSpace]
+    }
+
+    override var canBecomeKey: Bool { true }
+    override var canBecomeMain: Bool { false }
+
+    override func cancelOperation(_ sender: Any?) {
+        onCancel?()
     }
 }

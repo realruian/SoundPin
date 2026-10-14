@@ -1,5 +1,5 @@
 #!/bin/bash
-# Opens a temporary real MenuBarExtra with the production panel and simulated audio.
+# Opens the production menu bar item and panel with simulated audio.
 # Requires Accessibility and Screen Recording. Never changes system preferences.
 set -euo pipefail
 cd "$(dirname "$0")/.."
