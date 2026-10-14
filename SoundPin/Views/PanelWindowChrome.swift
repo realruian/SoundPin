@@ -117,12 +117,15 @@ final class SoundPanelController: NSObject {
 
     private func startObserving() {
         stopObserving()
-        // Clicks in other apps, on the desktop or in the menu bar close the panel. A click on this
-        // app's own item also arrives here first; the item itself closes the panel then, so closing
-        // here as well would reopen it.
+        // Clicks in other apps, on the desktop or in the menu bar close the panel. On macOS 27 a
+        // click on this app's own item does nothing while the panel is open, so it closes it here
+        // too; before macOS 27 the item's action closes it, and closing here would reopen it.
         if let monitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown], handler: { [weak self] _ in
             guard let self else { return }
-            if let item = self.itemFrame, item.contains(NSEvent.mouseLocation) { return }
+            if let item = self.itemFrame, item.contains(NSEvent.mouseLocation) {
+                if #available(macOS 27.0, *) { self.close() }
+                return
+            }
             self.close()
         }) { monitors.append(monitor) }
         // In this app: a click in the transparent room around the panel closes it, as Control Center does.
