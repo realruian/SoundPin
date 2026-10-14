@@ -12,10 +12,12 @@ enum AppLanguage: String, CaseIterable, Identifiable {
 /// The text of the interface, in English and Simplified Chinese
 enum L10n {
     private static let settingKey = "appLanguage"
+    /// Preview/check processes keep language changes in memory.
+    static var persistsSetting = true
 
     static var setting: AppLanguage = AppLanguage(rawValue: UserDefaults.standard.string(forKey: settingKey) ?? "") ?? .system {
         didSet {
-            UserDefaults.standard.set(setting.rawValue, forKey: settingKey)
+            if persistsSetting { UserDefaults.standard.set(setting.rawValue, forKey: settingKey) }
         }
     }
 
@@ -43,12 +45,30 @@ enum L10n {
     static var noiseCancellation: String { pick("Noise Cancellation", "降噪") }
     static var showListeningModes: String { pick("Show Listening Modes", "展开听音模式") }
     static var hideListeningModes: String { pick("Hide Listening Modes", "收起听音模式") }
+    static var listeningModePending: String { pick("Switching…", "切换中…") }
+    static var listeningModeTimedOut: String { pick("The system hasn’t reported the requested mode. Try again.", "系统尚未返回所选模式，请重试。") }
+    static var listeningModeUnavailable: String { pick("Listening modes are temporarily unavailable. Try again.", "暂时无法读取听音模式，请重试。") }
     static var listeningModeFailed: String { pick("Couldn’t change the listening mode. Check that your AirPods are connected and try again.", "无法切换听音模式。请检查 AirPods 连接后重试。") }
     static var noDevices: String { pick("No Devices", "没有设备") }
     static var noVolumeControl: String { pick("This device has no volume control", "此设备不支持调节音量") }
     static var done: String { pick("Done", "完成") }
+    static var retry: String { pick("Retry", "重试") }
+    static var deviceReadUnavailable: String { pick("Devices couldn’t be refreshed", "暂时无法刷新设备") }
+    static var deviceSwitchFailed: String { pick("Couldn’t switch device", "设备切换未完成") }
+    static func deviceSwitchFailure(_ name: String) -> String {
+        pick("Couldn’t confirm the switch to \(name). Check its connection and try again.",
+             "未能确认已切换到“\(name)”。请检查连接后重试。")
+    }
     static var autoSwitchPaused: String { pick("Auto-Switch Paused", "自动切换已暂停") }
     static var resumeAutoSwitchHelp: String { pick("Click to resume automatic switching", "点击恢复自动切换") }
+
+    // Battery values are the latest report from macOS; the case can update separately.
+    static var batteryDevice: String { pick("Battery", "电量") }
+    static var batteryLeft: String { pick("Left", "左耳") }
+    static var batteryRight: String { pick("Right", "右耳") }
+    static var batteryCase: String { pick("Case", "充电盒") }
+    static func batteryCaseShort(_ value: Int) -> String { pick("Case \(value)%", "盒 \(value)%") }
+    static var batteryReportHelp: String { pick("Last reported by macOS. The lower earbud level is shown; case updates may be delayed.", "macOS 最近报告的电量。两耳不同时显示较低值；充电盒电量更新可能延迟。") }
 
     // Main menu
     static var autoSwitch: String { pick("Switch Devices Automatically", "自动切换设备") }

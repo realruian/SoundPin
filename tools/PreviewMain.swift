@@ -2,58 +2,45 @@ import SwiftUI
 import AppKit
 import CoreAudio
 
-// Renders the panel to a PNG for a visual check, since the real menu bar panel
-// cannot be captured from outside. Run it through tools/render-preview.sh, which
-// gives this process its own copy of the settings with automatic switching off,
-// so creating AudioManager here applies nothing to the audio devices.
-//
-//   soundpinpreview <output.png> [--manual-look] [--edit-look] [--demo] [--lang en|zh-Hans]
-//
-// --demo swaps this Mac's devices for a sample set and frames the panel, for a
-// screenshot that can be published.
+// Renders sample devices only, using in-memory audio and preferences.
+// --demo adds a frame; --manual-look and --edit-look select sample states.
 @main struct PreviewMain {
     @MainActor static func main() {
         let app = NSApplication.shared
         app.setActivationPolicy(.accessory)
+        if CommandLine.arguments.contains("--dark") {
+            app.appearance = NSAppearance(named: CommandLine.arguments.contains("--high-contrast")
+                                          ? .accessibilityHighContrastDarkAqua : .darkAqua)
+        } else if CommandLine.arguments.contains("--high-contrast") {
+            app.appearance = NSAppearance(named: .accessibilityHighContrastAqua)
+        }
         let out = CommandLine.arguments[1]
-        let manager = AudioManager()
-        // Shown as automatic unless asked otherwise. Only the published flag is flipped;
-        // the copied priorities match the real app's, so a device event during the
-        // render would pick the same devices the real app picks.
-        if !CommandLine.arguments.contains("--manual-look") { manager.isCustomMode = false }
+        let showsBattery = CommandLine.arguments.contains("--battery")
+        let manager = PreviewSupport.manager(listeningModes: showsBattery, battery: showsBattery)
+        if showsBattery { Task { await manager.refreshBatteryLevels() } }
+        manager.setCustomMode(CommandLine.arguments.contains("--manual-look"))
         if CommandLine.arguments.contains("--edit-look") { manager.toggleEditMode() }
         if let flag = CommandLine.arguments.firstIndex(of: "--lang"), flag + 1 < CommandLine.arguments.count {
             manager.language = AppLanguage(rawValue: CommandLine.arguments[flag + 1]) ?? .system
         }
 
         let demo = CommandLine.arguments.contains("--demo")
-        if demo {
-            func device(_ id: AudioObjectID, _ name: String, _ type: AudioDeviceType) -> AudioDevice {
-                AudioDevice(id: id, uid: "demo-\(id)", name: name, type: type)
-            }
-            manager.headphoneDevices = [device(9001, "AirPods Pro", .output)]
-            manager.speakerDevices = [
-                device(9002, "MacBook Pro Speakers", .output),
-                device(9003, "Studio Display Speakers", .output),
-            ]
-            manager.inputDevices = [
-                device(9004, "Shure MV7+", .input),
-                device(9005, "AirPods Pro", .input),
-                device(9006, "MacBook Pro Microphone", .input),
-            ]
-            manager.hiddenInputDevices = []
-            manager.hiddenSpeakerDevices = []
-            manager.hiddenHeadphoneDevices = []
-            manager.currentMode = .headphone
-            manager.currentOutputId = 9001
-            manager.currentInputId = 9004
-            manager.mutedRowIDs = []
-            manager.volume = 0.6
+        let panel: AnyView
+        if let flag = CommandLine.arguments.firstIndex(of: "--listening-state"), flag + 1 < CommandLine.arguments.count {
+            let sample = CommandLine.arguments[flag + 1]
+            guard ["ready", "pending", "failed", "unavailable"].contains(sample) else { exit(2) }
+            let state = ListeningModeState(currentRawValue: sample == "unavailable" ? 0 : 2, supportedMask: 7)
+            let request: ListeningModeRequestState? = sample == "pending" ? .pending(.transparency)
+                : sample == "failed" ? .failed(.transparency, .timedOut) : nil
+            panel = AnyView(ListeningModeView(state: state, requestState: request,
+                                              isUnavailable: sample == "unavailable", onRetry: {}, onRefresh: {}) { _ in }
+                .frame(width: 308).padding(.vertical, 10)
+                .background(Color(nsColor: .windowBackgroundColor)))
+        } else {
+            panel = AnyView(MenuBarView()
+                .environmentObject(manager)
+                .background(Color(nsColor: .windowBackgroundColor)))
         }
-
-        let panel = MenuBarView()
-            .environmentObject(manager)
-            .background(Color(nsColor: .windowBackgroundColor))
         let root: AnyView = demo
             ? AnyView(panel
                 .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
@@ -80,7 +67,13 @@ import CoreAudio
             exit(1)
         }
         host.cacheDisplay(in: host.bounds, to: rep)
-        try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: out))
+        do {
+            guard let png = rep.representation(using: .png, properties: [:]) else { exit(1) }
+            try png.write(to: URL(fileURLWithPath: out))
+        } catch {
+            print("could not write preview: \(error)")
+            exit(1)
+        }
         print("rendered \(Int(size.width))x\(Int(size.height))")
     }
 }

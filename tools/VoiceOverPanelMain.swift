@@ -4,8 +4,7 @@ import CoreAudio
 
 // Shows the panel with a sample set of devices in a fully transparent window and waits,
 // so that tools/VoiceOverDump.swift can read it from outside the way VoiceOver does.
-// Run it through tools/check-voiceover.sh, which gives this process its own settings
-// with automatic switching off, so nothing here reaches the real audio devices.
+// Uses in-memory audio and preferences; no real audio service is linked.
 //
 //   soundpinvoiceover <seconds to stay open> [--lang en|zh-Hans]
 @main struct VoiceOverPanelMain {
@@ -15,7 +14,9 @@ import CoreAudio
         // The accessibility API gets no answer from an app that has not finished launching
         app.finishLaunching()
 
-        let manager = AudioManager()
+        let checkingModes = CommandLine.arguments.contains("--listening-ax")
+        let manager = PreviewSupport.manager(listeningModes: checkingModes, delayedModes: checkingModes)
+        manager.setCustomMode(true)
         manager.language = .english
         if let flag = CommandLine.arguments.firstIndex(of: "--lang"), flag + 1 < CommandLine.arguments.count {
             manager.language = AppLanguage(rawValue: CommandLine.arguments[flag + 1]) ?? .english
@@ -44,7 +45,9 @@ import CoreAudio
         manager.volume = 0.6
         manager.hasVolumeControl = true
 
-        let host = NSHostingView(rootView: MenuBarView().environmentObject(manager))
+        let content = checkingModes ? AnyView(ListeningModeAXPanel().environmentObject(manager))
+            : AnyView(MenuBarView().environmentObject(manager))
+        let host = NSHostingView(rootView: content)
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 308, height: 700), styleMask: [.titled], backing: .buffered, defer: false)
         window.title = "SoundPin VoiceOver check"
         window.contentView = host
@@ -56,5 +59,18 @@ import CoreAudio
         let seconds = CommandLine.arguments.dropFirst().compactMap(Double.init).first ?? 8
         RunLoop.main.run(until: Date().addingTimeInterval(seconds))
         exit(0)
+    }
+}
+
+/// A stable AX host isolates button semantics from transient menu focus.
+private struct ListeningModeAXPanel: View {
+    @EnvironmentObject var manager: AudioManager
+    var body: some View {
+        if let device = manager.headphoneDevices.first, let state = manager.listeningModes[device.uid] {
+            ListeningModeView(state: state, requestState: manager.listeningModeRequests[device.uid],
+                              onRetry: { manager.retryListeningMode(for: device) }) { mode in
+                manager.setListeningMode(mode, for: device)
+            }
+        }
     }
 }

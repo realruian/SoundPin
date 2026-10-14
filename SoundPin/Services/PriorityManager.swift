@@ -33,7 +33,9 @@ struct StoredDevice: Codable, Equatable {
 }
 
 class PriorityManager {
-    private let defaults = UserDefaults.standard
+    private let defaults: PreferenceStore
+
+    init(defaults: PreferenceStore = UserDefaults.standard) { self.defaults = defaults }
 
     private let inputPrioritiesKey = "inputPriorities"
     private let speakerPrioritiesKey = "speakerPriorities"
@@ -74,11 +76,11 @@ class PriorityManager {
     }
 
     /// Sets "last seen" to now for devices that have just been disconnected
-    func markLastSeen(uids: Set<String>) {
-        guard !uids.isEmpty else { return }
+    func markLastSeen(rowIDs: Set<String>) {
+        guard !rowIDs.isEmpty else { return }
         var known = getKnownDevices()
         let now = Date()
-        for index in known.indices where uids.contains(known[index].uid) {
+        for index in known.indices where rowIDs.contains("\(known[index].isInput ? "input" : "output"):\(known[index].uid)") {
             known[index].lastSeen = now
         }
         saveKnownDevices(known)

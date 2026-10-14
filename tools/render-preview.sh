@@ -1,33 +1,14 @@
 #!/bin/bash
-# Renders the panel to a PNG without opening it, for checking layout changes.
-#   tools/render-preview.sh [output.png] [--manual-look] [--edit-look] [--demo] [--lang en|zh-Hans]
-#
-# Does not change the audio devices: the preview process reads a copy of the
-# app's settings with automatic switching turned off.
+# Renders sample devices only. The binary contains no real audio service.
 set -euo pipefail
 cd "$(dirname "$0")/.."
-
+source tools/check-sources.sh
 OUT=".build/preview/panel.png"
-if [ $# -gt 0 ] && [[ "$1" != --* ]]; then
-  OUT="$1"
-  shift
-fi
-
+if [ $# -gt 0 ] && [[ "$1" != --* ]]; then OUT="$1"; shift; fi
 WORK=".build/preview"
-mkdir -p "$WORK/src"
-cp SoundPin/Models/*.swift SoundPin/Services/*.swift SoundPin/Views/*.swift "$WORK/src/"
-# The app's own entry point has to go, the preview brings its own
-sed 's/^@main$//' SoundPin/SoundPinApp.swift > "$WORK/src/SoundPinApp.swift"
-cp tools/PreviewMain.swift "$WORK/src/"
-swiftc -suppress-warnings -parse-as-library -o "$WORK/soundpinpreview" "$WORK"/src/*.swift
-
-# The preview's settings domain is named after its executable
-# Removed again on exit; the pause lets the preview's last settings write land first
-trap 'sleep 1; defaults delete soundpinpreview >/dev/null 2>&1 || true; rm -f "$HOME/Library/Preferences/soundpinpreview.plist"' EXIT
-if defaults export io.github.realruian.SoundPin "$WORK/settings.plist" 2>/dev/null; then
-  defaults import soundpinpreview "$WORK/settings.plist"
-fi
-defaults write soundpinpreview customMode -bool true
-
+mkdir -p "$WORK"
+swiftc -warnings-as-errors -parse-as-library -target "$(uname -m)-apple-macos13.0" -module-cache-path "$WORK/ModuleCache" \
+  "${PREVIEW_SOURCES[@]}" tools/PreviewMain.swift -o "$WORK/soundpinpreview"
 "$WORK/soundpinpreview" "$OUT" "$@"
+test -s "$OUT"
 echo "Wrote $OUT"

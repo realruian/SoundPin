@@ -1,15 +1,11 @@
 #!/bin/bash
-# Prints which list and which icon a table of sample devices gets, to check the
-# rules after changing them. Reads only; it does not touch the audio devices.
-#   tools/check-devices.sh
+# Sample classification and symbol checks. No audio service or manager is linked.
 set -euo pipefail
 cd "$(dirname "$0")/.."
-
+source tools/check-sources.sh
 WORK=".build/scenario"
-mkdir -p "$WORK/src"
-cp SoundPin/Models/*.swift SoundPin/Services/*.swift SoundPin/Views/*.swift "$WORK/src/"
-sed 's/^@main$//' SoundPin/SoundPinApp.swift > "$WORK/src/SoundPinApp.swift"
-cp tools/ScenarioMain.swift "$WORK/src/"
-swiftc -suppress-warnings -parse-as-library -o "$WORK/apbscenario" "$WORK"/src/*.swift
-
-"$WORK/apbscenario" "$@"
+mkdir -p "$WORK"
+swiftc -warnings-as-errors -parse-as-library -module-cache-path "$WORK/ModuleCache" \
+  "${MODEL_SOURCES[@]}" SoundPin/Services/PriorityManager.swift tools/AudioTestSupport.swift \
+  tools/ScenarioMain.swift -o "$WORK/check"
+"$WORK/check" "$@"

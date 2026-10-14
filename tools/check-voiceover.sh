@@ -1,24 +1,19 @@
 #!/bin/bash
 # Prints what VoiceOver finds in the panel and runs one row action, without turning
 # VoiceOver on. The panel is shown with sample devices in an invisible window, in a
-# process with its own settings and automatic switching off, so the audio devices are
-# not touched. The terminal needs Accessibility permission.
+# process with in-memory settings and simulated audio; real audio services are not linked. The terminal needs Accessibility permission.
 #   tools/check-voiceover.sh [--lang en|zh-Hans]
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
 WORK=".build/voiceover-check"
-mkdir -p "$WORK/src"
-cp SoundPin/Models/*.swift SoundPin/Services/*.swift SoundPin/Views/*.swift "$WORK/src/"
-# The app's own entry point has to go, the check brings its own
-sed 's/^@main$//' SoundPin/SoundPinApp.swift > "$WORK/src/SoundPinApp.swift"
-cp tools/VoiceOverPanelMain.swift "$WORK/src/"
-swiftc -suppress-warnings -parse-as-library -o "$WORK/soundpinvoiceover" "$WORK"/src/*.swift
-swiftc -suppress-warnings -o "$WORK/voiceoverdump" tools/VoiceOverDump.swift
-
-# The panel's settings domain is named after its executable; removed again on exit
-trap 'kill "$PANEL" >/dev/null 2>&1 || true; wait "$PANEL" 2>/dev/null || true; sleep 1; defaults delete soundpinvoiceover >/dev/null 2>&1 || true; rm -f "$HOME/Library/Preferences/soundpinvoiceover.plist"' EXIT
-defaults write soundpinvoiceover customMode -bool true
+mkdir -p "$WORK"
+source tools/check-sources.sh
+swiftc -warnings-as-errors -parse-as-library -target "$(uname -m)-apple-macos13.0" -module-cache-path "$WORK/ModuleCache" \
+  "${PREVIEW_SOURCES[@]}" tools/VoiceOverPanelMain.swift -o "$WORK/soundpinvoiceover"
+swiftc -warnings-as-errors -o "$WORK/voiceoverdump" tools/VoiceOverDump.swift
+PANEL=""
+trap 'if [ -n "$PANEL" ]; then kill "$PANEL" >/dev/null 2>&1 || true; wait "$PANEL" 2>/dev/null || true; fi' EXIT
 
 "$WORK/soundpinvoiceover" 10 "$@" &
 PANEL=$!

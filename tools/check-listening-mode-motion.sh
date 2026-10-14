@@ -4,12 +4,10 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 WORK=".build/listening-mode-motion-check"
-mkdir -p "$WORK/src"
-cp SoundPin/Models/*.swift SoundPin/Services/*.swift SoundPin/Views/*.swift "$WORK/src/"
-sed 's/^@main$//' SoundPin/SoundPinApp.swift > "$WORK/src/SoundPinApp.swift"
-cp tools/ListeningModeMotionCheckMain.swift "$WORK/src/"
+mkdir -p "$WORK"
+source tools/check-sources.sh
 swiftc -warnings-as-errors -parse-as-library -target "$(uname -m)-apple-macos13.0" -module-cache-path "$WORK/ModuleCache" \
-  "$WORK"/src/*.swift -o "$WORK/check"
+  "${PREVIEW_SOURCES[@]}" tools/ListeningModeMotionCheckMain.swift -o "$WORK/check"
 cat > "$WORK/ClickProbe.swift" <<'SWIFT'
 import CoreGraphics
 import Foundation

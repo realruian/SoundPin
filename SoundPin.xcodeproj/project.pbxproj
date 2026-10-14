@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		A10000000000000000000035 /* PanelWindowChrome.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000035 /* PanelWindowChrome.swift */; };
 		A10000000000000000000012 /* PanelPlacement.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000012 /* PanelPlacement.swift */; };
 		A10000000000000000000001 /* SoundPinApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000001 /* SoundPinApp.swift */; };
 		A10000000000000000000002 /* AudioDevice.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000002 /* AudioDevice.swift */; };
@@ -24,9 +25,15 @@
 		A10000000000000000000013 /* ListeningMode.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000013 /* ListeningMode.swift */; };
 		A10000000000000000000014 /* ListeningModeService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000014 /* ListeningModeService.swift */; };
 		A10000000000000000000015 /* ListeningModeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000015 /* ListeningModeView.swift */; };
+		A10000000000000000000030 /* AudioManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000030 /* AudioManager.swift */; };
+		A10000000000000000000031 /* AudioServices.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000031 /* AudioServices.swift */; };
+		A10000000000000000000032 /* DeviceGlyph.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000032 /* DeviceGlyph.swift */; };
+		A10000000000000000000033 /* DeviceBattery.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000033 /* DeviceBattery.swift */; };
+		A10000000000000000000034 /* BluetoothBatteryService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000034 /* BluetoothBatteryService.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		A20000000000000000000035 /* PanelWindowChrome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PanelWindowChrome.swift; sourceTree = "<group>"; };
 		A20000000000000000000012 /* PanelPlacement.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PanelPlacement.swift; sourceTree = "<group>"; };
 		A20000000000000000000001 /* SoundPinApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SoundPinApp.swift; sourceTree = "<group>"; };
 		A20000000000000000000002 /* AudioDevice.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioDevice.swift; sourceTree = "<group>"; };
@@ -47,6 +54,11 @@
 		A20000000000000000000013 /* ListeningMode.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ListeningMode.swift; sourceTree = "<group>"; };
 		A20000000000000000000014 /* ListeningModeService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ListeningModeService.swift; sourceTree = "<group>"; };
 		A20000000000000000000015 /* ListeningModeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ListeningModeView.swift; sourceTree = "<group>"; };
+		A20000000000000000000030 /* AudioManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioManager.swift; sourceTree = "<group>"; };
+		A20000000000000000000031 /* AudioServices.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioServices.swift; sourceTree = "<group>"; };
+		A20000000000000000000032 /* DeviceGlyph.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeviceGlyph.swift; sourceTree = "<group>"; };
+		A20000000000000000000033 /* DeviceBattery.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeviceBattery.swift; sourceTree = "<group>"; };
+		A20000000000000000000034 /* BluetoothBatteryService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BluetoothBatteryService.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -88,6 +100,9 @@
 		A50000000000000000000003 /* Models */ = {
 			isa = PBXGroup;
 			children = (
+				A20000000000000000000033 /* DeviceBattery.swift */,
+				A20000000000000000000032 /* DeviceGlyph.swift */,
+				A20000000000000000000031 /* AudioServices.swift */,
 				A20000000000000000000013 /* ListeningMode.swift */,
 				A20000000000000000000002 /* AudioDevice.swift */,
 				A20000000000000000000009 /* Headphones.swift */,
@@ -100,6 +115,8 @@
 		A50000000000000000000004 /* Services */ = {
 			isa = PBXGroup;
 			children = (
+				A20000000000000000000034 /* BluetoothBatteryService.swift */,
+				A20000000000000000000030 /* AudioManager.swift */,
 				A20000000000000000000014 /* ListeningModeService.swift */,
 				A20000000000000000000003 /* AudioDeviceService.swift */,
 				A20000000000000000000004 /* PriorityManager.swift */,
@@ -112,6 +129,7 @@
 			isa = PBXGroup;
 			children = (
 				A20000000000000000000015 /* ListeningModeView.swift */,
+				A20000000000000000000035 /* PanelWindowChrome.swift */,
 				A20000000000000000000005 /* MenuBarView.swift */,
 				A20000000000000000000006 /* DeviceListView.swift */,
 			);
@@ -206,7 +224,13 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A10000000000000000000034 /* BluetoothBatteryService.swift in Sources */,
+				A10000000000000000000033 /* DeviceBattery.swift in Sources */,
+				A10000000000000000000032 /* DeviceGlyph.swift in Sources */,
+				A10000000000000000000031 /* AudioServices.swift in Sources */,
+				A10000000000000000000030 /* AudioManager.swift in Sources */,
 				A10000000000000000000015 /* ListeningModeView.swift in Sources */,
+				A10000000000000000000035 /* PanelWindowChrome.swift in Sources */,
 				A10000000000000000000014 /* ListeningModeService.swift in Sources */,
 				A10000000000000000000013 /* ListeningMode.swift in Sources */,
 				A10000000000000000000001 /* SoundPinApp.swift in Sources */,

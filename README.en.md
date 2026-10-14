@@ -42,9 +42,11 @@ SoundPin maintains priority lists for speakers, headphones, and microphones. Whe
 - **AirPods listening modes (experimental)**: Expand a supported device to select Transparency, Adaptive, or Noise Cancellation. Only reported modes are offered; routing and device priorities stay unchanged.
 - **System-style panel**: Designed after the macOS Sound menu. The menu bar icon reflects volume level, mute state, and connected headphone models.
 - **Offline device memory**: Disconnected devices remain in the list with last-seen timestamps, allowing you to organize priorities ahead of time.
-- **Lightweight and private**: Driven by CoreAudio hardware event notifications with no polling. Requires no microphone recording permissions, makes no network requests, and collects no telemetry.
+- **Lightweight and private**: Driven by CoreAudio hardware event notifications without continuous polling. Requires no microphone recording permissions, makes no network requests, and collects no telemetry.
 - **Keyboard and VoiceOver support**: Full VoiceOver support for reading device states and actions, plus Tab/Space navigation on macOS 14+.
 - **Bilingual interface**: Supports English and Simplified Chinese, matching the system language by default.
+
+Bluetooth battery levels appear for connected audio devices whose addresses match the macOS report. Hover for separate earbud and case values; the lower earbud level is displayed. Reads run at most once per minute while the panel is open. Unsupported devices show no value; case updates may be delayed.
 
 ## Installation
 
@@ -90,7 +92,13 @@ SoundPin runs in the menu bar as a speaker icon:
 | Edit Device List | Displays disconnected devices for reordering or removing |
 | Sound Settings… | Opens macOS Sound settings |
 
-When automatic switching is paused, an "Auto-Switch Paused" indicator appears in the header. Click it to resume.
+When automatic switching is paused, pending routing retries are cancelled and an "Auto-Switch Paused" indicator appears in the header. Click it to resume.
+
+Device inventory failures retain the previous display and suspend automatic selection, with at most two scheduled read retries. Manual selection is promoted only after the system default-device read-back matches. Failed switches receive at most two additional attempts, followed by a retry action. System read-back does not verify audible playback.
+
+Drag and VoiceOver reorder actions identify endpoints by identity. Changes to list order, connection state, or category cancel a drag in progress. Hiding a device does not hide the active output’s volume, mute state, or headphone menu bar icon. Volume writes are read back, with the slider restored on failure; only a confirmed write may unmute the original output.
+
+Listening-mode requests show a pending state until the system reports the requested mode. A timeout after roughly 3.7 seconds offers an explicit retry; writes are never repeated automatically. Disconnection or endpoint identity changes cancel pending requests, which are not replayed after reconnecting. Failed reads or listener registrations receive at most three scheduled recovery attempts. Previously discovered controls remain visible after read failure, with stale checkmarks cleared and selection disabled. Read-back describes the system cache, not an audible hardware confirmation.
 
 ## How it works
 
@@ -130,12 +138,18 @@ defaults delete app.audioprioritybar
 
 The repository includes helper scripts:
 
-- `tools/render-preview.sh [output.png] [--demo] [--lang en|zh-Hans]`: Renders offline panel previews via SwiftUI without physical device changes.
+- `tools/render-preview.sh [output.png] [--demo] [--lang en|zh-Hans]`: Renders sample devices with in-memory preferences. The binary does not link real audio services or read the app's device priorities; `--demo` adds a presentation frame. `--listening-state ready|pending|failed|unavailable` renders a standalone listening-mode example.
+- `tools/check-battery.sh [--live]`: checks battery parsing, exact address matching, cache invalidation, reconnection and report timeouts. `--live` also reads the local Bluetooth report. Add `--battery` to a preview for simulated levels.
+- `tools/check-routing.sh`: Checks inventory failure, bounded retries, pause cancellation, confirmed manual selection and independent input/output connections using simulated audio and a virtual clock.
+- `tools/check-interactions.sh`: Uses simulated devices to check identity-based reordering, stale-drag cancellation, hidden active state, volume write read-back and route changes during volume gestures.
 - `tools/check-devices.sh`: Tests device classification and icon rules against sample devices.
-- `tools/check-listening-modes.sh`: Checks supported modes, unknown values, and invalid-device guards without writing to real devices.
+- `tools/check-listening-modes.sh`: Checks supported modes, unknown values, invalid-device guards, and partial listener registration, recovery and cleanup using simulated hardware. No real device writes.
+- `tools/check-listening-mode-requests.sh`: Checks pending requests, timeout, retry, disconnect cancellation, late notifications and bounded recovery using in-memory services and a virtual clock. It does not link the real listening-mode service.
 - `tools/check-listening-mode-motion.sh`: Uses an isolated real MenuBarExtra to check intermediate disclosure heights, a fixed window anchor, rapid reversal, and Reduce Motion without creating an audio service.
-- `tools/check-settings.sh`: Checks how devices are remembered and marked "never select automatically", in a settings domain of its own.
+- `tools/check-settings.sh`: Checks how devices are remembered and marked "never select automatically", using in-memory preferences without writing a preferences domain.
 - `tools/check-events.sh`: Checks that a burst of device notifications is handled once, using test devices only this process sees.
+- `tools/check-listening-mode-accessibility.sh`: verifies default mode actions, pending state, timeout and retry through Accessibility APIs in an isolated window with simulated devices; requires Accessibility permission.
+- `tools/check-panel-acceptance.sh [--reduce-motion] [--record]`: checks motion, accessibility actions and simulated requests in the real menu-bar panel. Requires Accessibility permission, plus Screen Recording for recording. Keep the desktop idle: dismissed menus or moving status items fail the check. This is an interactive diagnostic, not an unattended CI gate.
 - `tools/check-voiceover.sh [--lang en|zh-Hans]`: Reads the panel's accessibility information without turning VoiceOver on and runs one row action (the terminal needs Accessibility permission).
 - `tools/make-dmg.sh`: Builds a universal release binary and packages a DMG.
 

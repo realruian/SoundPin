@@ -8,7 +8,7 @@ import CoreAudio
         let builtIn = kAudioDeviceTransportTypeBuiltIn, DP = kAudioDeviceTransportTypeDisplayPort
         let HDMI = kAudioDeviceTransportTypeHDMI, airPlay = kAudioDeviceTransportTypeAirPlay
         let virtual = kAudioDeviceTransportTypeVirtual, cont = kAudioDeviceTransportTypeContinuityCaptureWired
-        let pm = PriorityManager()
+        let pm = PriorityManager(defaults: MemoryPreferences())
         let outputs: [(String, UInt32)] = [
             ("AirPods 4 ANC", BT), ("AirPods Pro 3", BT), ("小明的 AirPods Pro", BT), ("AirPods", BT), ("AirPods Max", BT),
             ("Beats Studio Pro", BT), ("Powerbeats Pro 2", BT), ("Beats Flex", BT),
@@ -51,10 +51,9 @@ import CoreAudio
             let ok = NSImage(systemSymbolName: sym, accessibilityDescription: nil) != nil
             print("  " + pad(name, 37) + sym + (ok ? "" : "  <-- MISSING SYMBOL"))
         }
-        // Screen guard against a live DisplayPort/HDMI device, with a name that contains "ear"
-        if CommandLine.arguments.count > 1, let liveId = UInt32(CommandLine.arguments[1]) {
-            let fake = AudioDevice(id: liveId, uid: "scenario-test-uid", name: "LG UltraGear", type: .output)
-            print("screen guard (live id \(liveId), named LG UltraGear): transport=\(fake.transportType.map(String.init) ?? "nil") -> \(pm.getCategory(for: fake))")
-        }
+        let screen = AudioDevice(id: 99, uid: "scenario-screen", name: "LG UltraGear", type: .output,
+                                 transportType: kAudioDeviceTransportTypeDisplayPort)
+        precondition(pm.getCategory(for: screen) == .speaker)
+        print("screen transport guard passed (sample snapshot)")
     }
 }

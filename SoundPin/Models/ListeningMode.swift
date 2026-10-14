@@ -33,3 +33,39 @@ struct ListeningModeState: Equatable {
         }
     }
 }
+
+/// Request progress is separate from the last mode reported by the system.
+enum ListeningModeRequestState: Equatable {
+    case pending(ListeningMode)
+    case failed(ListeningMode, ListeningModeFailure)
+
+    var mode: ListeningMode {
+        switch self {
+        case .pending(let mode), .failed(let mode, _): return mode
+        }
+    }
+    var isPending: Bool {
+        if case .pending = self { return true }
+        return false
+    }
+}
+
+enum ListeningModeFailure: Equatable {
+    case rejected
+    case timedOut
+    case unavailable
+
+    var message: String {
+        switch self {
+        case .rejected: return L10n.listeningModeFailed
+        case .timedOut: return L10n.listeningModeTimedOut
+        case .unavailable: return L10n.listeningModeUnavailable
+        }
+    }
+}
+
+extension ListeningModeState {
+    var withoutCurrent: ListeningModeState {
+        ListeningModeState(currentRawValue: 0, supportedMask: supported.reduce(0) { $0 | $1.supportBit })
+    }
+}

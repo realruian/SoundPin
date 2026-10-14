@@ -4,21 +4,27 @@ import UniformTypeIdentifiers
 
 struct DeviceListView: View {
     @EnvironmentObject var audioManager: AudioManager
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
+    @Environment(\.panelReducedMotion) private var forcedReduceMotion
+    private var reduceMotion: Bool { systemReduceMotion || forcedReduceMotion }
     let devices: [AudioDevice]
     let currentDeviceId: AudioObjectID?
-    let onMove: (IndexSet, Int) -> Void
+    let onMove: (DeviceMove) -> Void
     let onSelect: (AudioDevice) -> Void
     var showCategoryPicker: Bool = false
     var onHide: ((AudioDevice) -> Void)?
     var isHiddenSection: Bool = false
     var category: OutputCategory? = nil
 
-    // Only track which item is being dragged and the target - not the offset
-    @State private var draggingIndex: Int? = nil
+    @State private var draggingRowID: String?
+    @State private var dragDevices: [AudioDevice] = []
+    @State private var dragCancelled = false
+    private var draggingIndex: Int? {
+        guard !dragCancelled, DeviceMove.identities(in: dragDevices) == DeviceMove.identities(in: devices) else { return nil }
+        return devices.firstIndex { $0.rowID == draggingRowID }
+    }
     @State private var targetIndex: Int? = nil
     @State private var expandedUID: String?
-    @State private var modeRequestFailed = false
 
     private let rowHeight: CGFloat = 32
 
@@ -35,13 +41,13 @@ struct DeviceListView: View {
                     isHiddenSection: isHiddenSection,
                     category: category,
                     onMoveUp: index > 0 ? {
-                        onMove(IndexSet(integer: index), index - 1)
+                        move(device.rowID, to: index - 1, in: devices)
                     } : nil,
                     onMoveDown: index < devices.count - 1 ? {
-                        onMove(IndexSet(integer: index), index + 2)
+                        move(device.rowID, to: index + 2, in: devices)
                     } : nil,
                     onMoveToTop: index > 0 ? {
-                        onMove(IndexSet(integer: index), 0)
+                        move(device.rowID, to: 0, in: devices)
                     } : nil,
                     isDragging: draggingIndex == index,
                     isDropTarget: isDropTarget(for: index),
@@ -54,15 +60,19 @@ struct DeviceListView: View {
                         transaction.disablesAnimations = true
                         withTransaction(transaction) {
                             expandedUID = nil
-                            draggingIndex = index
+                            draggingRowID = device.rowID
+                            dragDevices = devices
+                            dragCancelled = false
+                            targetIndex = nil
                         }
                     },
                     onTargetChanged: { newTarget in
                         targetIndex = newTarget
                     },
                     onDragEnded: {
-                        performMove(fromIndex: index)
+                        performMove(rowID: device.rowID)
                     },
+                    onDragCancelled: { clearDrag(rowID: device.rowID) },
                     isListeningModeExpanded: expandedUID == device.uid,
                     onToggleListeningModes: listeningState(for: device) == nil ? nil : {
                         let expanding = expandedUID != device.uid
@@ -73,8 +83,12 @@ struct DeviceListView: View {
                 )
                 .zIndex(draggingIndex == index ? 100 : 0)
                 if let state = listeningState(for: device) {
-                    ListeningModeDisclosure(isExpanded: expandedUID == device.uid, state: state, reduceMotion: reduceMotion) { mode in
-                        modeRequestFailed = !audioManager.setListeningMode(mode, for: device)
+                    ListeningModeDisclosure(isExpanded: expandedUID == device.uid, state: state, reduceMotion: reduceMotion,
+                                            requestState: audioManager.listeningModeRequests[device.uid],
+                                            isUnavailable: audioManager.unavailableListeningModeUIDs.contains(device.uid),
+                                            onRetry: { audioManager.retryListeningMode(for: device) },
+                                            onRefresh: { audioManager.retryListeningModeRead() }) { mode in
+                        audioManager.setListeningMode(mode, for: device)
                     }
                     .padding(.horizontal, -6)
                 }
@@ -82,13 +96,14 @@ struct DeviceListView: View {
         }
         .panelGeometryGroup()
         .onAppear { audioManager.refreshListeningModes() }
+        .onChange(of: DeviceMove.identities(in: devices)) { identities in
+            if draggingRowID != nil, identities != DeviceMove.identities(in: dragDevices) {
+                dragCancelled = true
+                targetIndex = nil
+            }
+        }
         .onReceive(audioManager.$listeningModes) { modes in
             if let uid = expandedUID, modes[uid] == nil { expandedUID = nil }
-        }
-        .alert(L10n.listeningMode, isPresented: $modeRequestFailed) {
-            Button(L10n.done, role: .cancel) {}
-        } message: {
-            Text(L10n.listeningModeFailed)
         }
     }
 
@@ -107,11 +122,22 @@ struct DeviceListView: View {
         return target == devices.count && index == devices.count - 1 && dragging != devices.count - 1
     }
 
-    private func performMove(fromIndex: Int) {
-        if let target = targetIndex, target != fromIndex {
-            onMove(IndexSet(integer: fromIndex), target)
+    private func move(_ rowID: String, to target: Int, in snapshot: [AudioDevice]) {
+        if let move = DeviceMove(rowID: rowID, to: target, in: snapshot) { onMove(move) }
+    }
+
+    private func performMove(rowID: String) {
+        guard draggingRowID == rowID else { return }
+        if let target = targetIndex, draggingIndex != nil {
+            move(rowID, to: target, in: dragDevices)
         }
-        draggingIndex = nil
+        clearDrag(rowID: rowID)
+    }
+
+    private func clearDrag(rowID: String) {
+        guard draggingRowID == rowID else { return }
+        draggingRowID = nil
+        dragDevices = []
         targetIndex = nil
     }
 }
@@ -119,7 +145,9 @@ struct DeviceListView: View {
 // Row wrapper that handles the drag gesture
 struct DraggableDeviceRow: View {
     @EnvironmentObject var audioManager: AudioManager
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
+    @Environment(\.panelReducedMotion) private var forcedReduceMotion
+    private var reduceMotion: Bool { systemReduceMotion || forcedReduceMotion }
     let device: AudioDevice
     let index: Int
     let isSelected: Bool
@@ -139,11 +167,14 @@ struct DraggableDeviceRow: View {
     let onDragStarted: () -> Void
     let onTargetChanged: (Int?) -> Void
     let onDragEnded: () -> Void
+    let onDragCancelled: () -> Void
     var isListeningModeExpanded = false
     var onToggleListeningModes: (() -> Void)?
 
     @State private var isHovering = false
     @State private var lastReportedTarget: Int? = nil
+    @State private var gestureStarted = false
+    @GestureState private var gestureActive = false
 
     var isDisconnected: Bool {
         !device.isConnected
@@ -204,12 +235,18 @@ struct DraggableDeviceRow: View {
         if isMuted {
             parts.append(L10n.muted)
         }
+        if let battery = audioManager.battery(for: device) { parts.append(battery.details) }
         return parts.joined(separator: L10n.listSeparator)
     }
 
     /// The row context menu, one array per group between dividers. VoiceOver gets the same list as actions.
     private var menuActionGroups: [[RowAction]] {
         var groups: [[RowAction]] = []
+        var order: [RowAction] = []
+        if let onMoveToTop { order.append(RowAction(title: L10n.moveToTop, systemImage: "arrow.up.to.line", perform: onMoveToTop)) }
+        if let onMoveUp { order.append(RowAction(title: L10n.moveUp, systemImage: "arrow.up", perform: onMoveUp)) }
+        if let onMoveDown { order.append(RowAction(title: L10n.moveDown, systemImage: "arrow.down", perform: onMoveDown)) }
+        if !order.isEmpty { groups.append(order) }
 
         if showCategoryPicker {
             groups.append([
@@ -266,11 +303,7 @@ struct DraggableDeviceRow: View {
     private func select() {
         guard !isDisconnected else { return }
         onSelect()
-        // With automatic switching on, the top of the list is what gets used,
-        // so a pick only sticks if it moves there
-        if !audioManager.isCustomMode {
-            onMoveToTop?()
-        }
+
     }
 
     private func calculateTarget(offset: CGFloat) -> Int? {
@@ -316,6 +349,20 @@ struct DraggableDeviceRow: View {
             }
 
             Spacer(minLength: 4)
+
+            if let battery = audioManager.battery(for: device) {
+                HStack(spacing: 3) {
+                    Text(battery.compactText)
+                        .font(.system(size: 12))
+                    Image(systemName: battery.symbol)
+                        .font(.system(size: 15))
+                }
+                .foregroundColor(.panelBattery)
+                .fixedSize()
+                .padding(.trailing, onToggleListeningModes == nil ? 0 : 4)
+                .help(battery.details + "\n" + L10n.batteryReportHelp)
+                .accessibilityHidden(true) // Included in the row's spoken value.
+            }
 
             if let onToggleListeningModes {
                 Button(action: onToggleListeningModes) {
@@ -366,20 +413,22 @@ struct DraggableDeviceRow: View {
             RoundedRectangle(cornerRadius: 8)
                 .stroke(isDragging ? Color.accentColor : Color.clear, lineWidth: 2)
         )
-        .scaleEffect(isDragging ? 1.02 : 1.0)
-        .animation(.easeInOut(duration: 0.15), value: isHovering)
-        .animation(.easeInOut(duration: 0.15), value: isSelected)
-        .animation(.spring(response: 0.25, dampingFraction: 0.7), value: isDragging)
-        .animation(.easeInOut(duration: 0.1), value: isDropTarget)
-        .animation(.easeInOut(duration: 0.1), value: isDropTargetBelow)
+        .scaleEffect(isDragging && !reduceMotion ? 1.02 : 1.0)
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.15), value: isHovering)
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.15), value: isSelected)
+        .animation(reduceMotion ? nil : .spring(response: 0.25, dampingFraction: 0.7), value: isDragging)
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.1), value: isDropTarget)
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.1), value: isDropTargetBelow)
         .contentShape(Rectangle())
         .onTapGesture {
             select()
         }
         .gesture(
             DragGesture(minimumDistance: 5)
+                .updating($gestureActive) { _, active, _ in active = true }
                 .onChanged { value in
-                    if !isDragging {
+                    if !gestureStarted {
+                        gestureStarted = true
                         onDragStarted()
                     }
                     let newTarget = calculateTarget(offset: value.translation.height)
@@ -389,10 +438,19 @@ struct DraggableDeviceRow: View {
                     }
                 }
                 .onEnded { _ in
+                    gestureStarted = false
                     lastReportedTarget = nil
                     onDragEnded()
                 }
         )
+        .onChange(of: gestureActive) { active in
+            // GestureState resets on cancellation too, when onEnded is not delivered.
+            if !active {
+                gestureStarted = false
+                lastReportedTarget = nil
+                onDragCancelled()
+            }
+        }
         .contextMenu {
             ForEach(Array(menuActionGroups.enumerated()), id: \.offset) { index, group in
                 if index > 0 {
@@ -405,10 +463,11 @@ struct DraggableDeviceRow: View {
                 }
             }
         }
-        .modifier(RowKeyboardSupport(activate: select))
+        .help(device.name + (audioManager.battery(for: device).map { "\n" + $0.details + "\n" + L10n.batteryReportHelp } ?? ""))
         // VoiceOver reads the row as one button and exposes the context-menu
         // commands and pointer-only reordering as named actions.
         .accessibilityElement(children: .ignore)
+        .accessibilityIdentifier("device-" + device.rowID)
         .accessibilityLabel(device.name)
         .accessibilityValue(accessibilityStatus)
         .accessibilityAddTraits(isActive ? [.isButton, .isSelected] : .isButton)
@@ -418,19 +477,11 @@ struct DraggableDeviceRow: View {
                 Button(isListeningModeExpanded ? L10n.hideListeningModes : L10n.showListeningModes,
                        action: onToggleListeningModes)
             }
-            if let onMoveToTop {
-                Button(L10n.moveToTop, action: onMoveToTop)
-            }
-            if let onMoveUp {
-                Button(L10n.moveUp, action: onMoveUp)
-            }
-            if let onMoveDown {
-                Button(L10n.moveDown, action: onMoveDown)
-            }
             ForEach(menuActionGroups.flatMap { $0 }) { action in
                 Button(action.title, action: action.perform)
             }
         }
+
     }
 }
 
@@ -442,26 +493,6 @@ private struct RowAction: Identifiable {
     let perform: () -> Void
 
     var id: String { title }
-}
-
-/// Lets a row take keyboard focus the way a button does (with Keyboard Navigation on in
-/// System Settings) and be picked with Space or Return. The key handling needs macOS 14.
-private struct RowKeyboardSupport: ViewModifier {
-    let activate: () -> Void
-
-    func body(content: Content) -> some View {
-        if #available(macOS 14.0, *) {
-            content
-                .contentShape(.focusEffect, RoundedRectangle(cornerRadius: 8))
-                .focusable(true, interactions: .activate)
-                .onKeyPress(keys: [.space, .return]) { _ in
-                    activate()
-                    return .handled
-                }
-        } else {
-            content
-        }
-    }
 }
 
 // Drop indicator line

@@ -24,6 +24,15 @@ struct AudioDevice: Identifiable, Equatable, Hashable {
     let name: String
     let type: AudioDeviceType
     var isConnected: Bool = true
+    /// Captured with the inventory; models and previews never query HAL.
+    var transportType: UInt32? = nil
+
+    /// Candidate filtering is local; the service still validates UID and HAL capability.
+    var isListeningModeCandidate: Bool {
+        isConnected && id != 0 && type == .output
+            && name.localizedCaseInsensitiveContains("AirPods")
+            && transportType == kAudioDeviceTransportTypeBluetooth
+    }
 
     /// Identity of a row in a list. `id` cannot serve: every disconnected device has id 0,
     /// and a device with both a microphone and a speaker has one id for the two.
@@ -37,18 +46,41 @@ struct AudioDevice: Identifiable, Equatable, Hashable {
     }
 }
 
-extension AudioDevice {
-    /// How the device is attached (built-in, USB, Bluetooth, HDMI, ...); nil when it is not connected
-    var transportType: UInt32? {
-        guard isConnected else { return nil }
-        var address = AudioObjectPropertyAddress(
-            mSelector: kAudioDevicePropertyTransportType,
-            mScope: kAudioObjectPropertyScopeGlobal,
-            mElement: kAudioObjectPropertyElementMain
-        )
-        var value: UInt32 = 0
-        var size = UInt32(MemoryLayout<UInt32>.size)
-        let status = AudioObjectGetPropertyData(id, &address, 0, nil, &size, &value)
-        return status == noErr ? value : nil
+/// A reorder captures endpoint identities and the list seen when the gesture began.
+/// Topology or order changes cancel it; names and volume updates do not.
+struct DeviceMove {
+    struct Endpoint: Equatable {
+        let rowID: String
+        let id: AudioObjectID
+        let isConnected: Bool
+    }
+    let rowID: String
+    let beforeRowID: String?
+    let snapshot: [Endpoint]
+
+    static func identities(in devices: [AudioDevice]) -> [Endpoint] {
+        devices.map { Endpoint(rowID: $0.rowID, id: $0.id, isConnected: $0.isConnected) }
+    }
+
+    init?(rowID: String, to destination: Int, in devices: [AudioDevice]) {
+        guard let source = devices.firstIndex(where: { $0.rowID == rowID }),
+              (0...devices.count).contains(destination),
+              destination != source, destination != source + 1 else { return nil }
+        self.rowID = rowID
+        beforeRowID = destination < devices.count ? devices[destination].rowID : nil
+        snapshot = Self.identities(in: devices)
+    }
+
+    func resolve(in devices: [AudioDevice]) -> (source: IndexSet, destination: Int)? {
+        guard snapshot == Self.identities(in: devices),
+              let source = devices.firstIndex(where: { $0.rowID == rowID }) else { return nil }
+        let destination: Int
+        if let beforeRowID {
+            guard let index = devices.firstIndex(where: { $0.rowID == beforeRowID }) else { return nil }
+            destination = index
+        } else {
+            destination = devices.count
+        }
+        return (IndexSet(integer: source), destination)
     }
 }

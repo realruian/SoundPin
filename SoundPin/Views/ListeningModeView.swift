@@ -1,4 +1,15 @@
 import SwiftUI
+import Accessibility
+
+/// Allows an embedded preview to reduce motion without changing macOS settings.
+/// Production still always honors accessibilityReduceMotion through an OR policy.
+private struct PanelReducedMotionKey: EnvironmentKey { static let defaultValue = false }
+extension EnvironmentValues {
+    var panelReducedMotion: Bool {
+        get { self[PanelReducedMotionKey.self] }
+        set { self[PanelReducedMotionKey.self] = newValue }
+    }
+}
 
 enum ListeningModeMotion {
     // Use a retargetable system spring. The replica's extra bounce visibly
@@ -42,11 +53,16 @@ struct ListeningModeDisclosure: View {
     let isExpanded: Bool
     let state: ListeningModeState
     let reduceMotion: Bool
+    var requestState: ListeningModeRequestState? = nil
+    var isUnavailable = false
+    var onRetry: (() -> Void)? = nil
+    var onRefresh: (() -> Void)? = nil
     let onSelect: (ListeningMode) -> Void
     @State private var contentHeight: CGFloat = 0
 
     var body: some View {
-        ListeningModeView(state: state, onSelect: onSelect)
+        ListeningModeView(state: state, requestState: requestState, isUnavailable: isUnavailable,
+                          onRetry: onRetry, onRefresh: onRefresh, onSelect: onSelect)
             .padding(.top, 5)
             .padding(.bottom, 4)
             .fixedSize(horizontal: false, vertical: true)
@@ -64,6 +80,20 @@ struct ListeningModeDisclosure: View {
             .allowsHitTesting(isExpanded)
             .disabled(!isExpanded)
             .accessibilityHidden(!isExpanded)
+            .onChange(of: requestState) { request in
+                guard isExpanded, NSApplication.shared.keyWindow?.isVisible == true, let request else { return }
+                let message: String
+                switch request {
+                case .pending: message = L10n.listeningModePending
+                case .failed(_, let failure): message = failure.message
+                }
+                if #available(macOS 14.0, *) {
+                    AccessibilityNotification.Announcement(message).post()
+                } else {
+                    NSAccessibility.post(element: NSApplication.shared, notification: .announcementRequested,
+                                         userInfo: [.announcement: message, .priority: NSAccessibilityPriorityLevel.medium.rawValue])
+                }
+            }
     }
 }
 
@@ -77,6 +107,10 @@ private struct ListeningModeHeightKey: PreferenceKey {
 /// Matches the Sound menu: gray heading, monochrome glyphs, checkmark at the left.
 struct ListeningModeView: View {
     let state: ListeningModeState
+    var requestState: ListeningModeRequestState? = nil
+    var isUnavailable = false
+    var onRetry: (() -> Void)? = nil
+    var onRefresh: (() -> Void)? = nil
     let onSelect: (ListeningMode) -> Void
 
     var body: some View {
@@ -90,28 +124,53 @@ struct ListeningModeView: View {
                 .padding(.bottom, 3.5)
                 .accessibilityAddTraits(.isHeader)
             ForEach(state.supported) { mode in
-                ListeningModeRow(mode: mode, selected: state.current == mode) { onSelect(mode) }
+                ListeningModeRow(mode: mode, selected: !isUnavailable && state.current == mode,
+                                 pending: requestState == .pending(mode)) { onSelect(mode) }
+                    .disabled(isUnavailable || requestState?.isPending == true)
             }
             .padding(.horizontal, 6)
+            if isUnavailable {
+                feedback(L10n.listeningModeUnavailable, retry: onRefresh)
+            } else if case .failed(_, let failure) = requestState {
+                feedback(failure.message, retry: onRetry)
+            } else if requestState?.isPending == true {
+                Text(L10n.listeningModePending)
+                    .font(.caption).foregroundColor(.secondary)
+                    .padding(.horizontal, 14).padding(.top, 4)
+            }
             Divider().padding(.horizontal, 5).padding(.top, 5.5)
         }
         .background(Color.listeningModeBackground)
+    }
+
+    private func feedback(_ message: String, retry: (() -> Void)?) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            Text(message).fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
+            if let retry { Button(L10n.retry, action: retry).buttonStyle(.plain).foregroundColor(.accentColor) }
+        }
+        .font(.caption).foregroundColor(.secondary)
+        .padding(.horizontal, 14).padding(.top, 5)
     }
 }
 
 private struct ListeningModeRow: View {
     let mode: ListeningMode
     let selected: Bool
+    let pending: Bool
     let action: () -> Void
     @State private var hovering = false
 
     var body: some View {
         Button(action: action) {
             HStack(spacing: 8) {
-                Image(systemName: "checkmark")
-                    .font(.system(size: 13, weight: .semibold))
-                    .opacity(selected ? 1 : 0)
-                    .frame(width: 26)
+                ZStack {
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 13, weight: .semibold))
+                        .opacity(selected && !pending ? 1 : 0)
+                    if pending { ProgressView().controlSize(.mini) }
+                }
+                .frame(width: 26)
                 ListeningModeGlyph(mode: mode)
                     .foregroundColor(.listeningModeIcon)
                     .frame(width: 18, height: 18)
@@ -130,7 +189,10 @@ private struct ListeningModeRow: View {
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
         .accessibilityElement(children: .ignore)
+        .accessibilityIdentifier("listening-mode-\(mode.rawValue)")
+        .accessibilityAction(.default, action)
         .accessibilityLabel(mode.title)
+        .accessibilityValue(pending ? L10n.listeningModePending : "")
         .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
     }
 }

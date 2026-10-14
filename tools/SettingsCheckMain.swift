@@ -1,12 +1,11 @@
 import Foundation
 
 // Checks what PriorityManager stores about devices: the list of known devices and the
-// "never select automatically" list. Runs in this executable's own settings domain,
-// which tools/check-settings.sh removes afterwards. Touches no audio device.
+// "never select automatically" list. Uses an in-memory store and touches no audio device.
 @main struct SettingsCheckMain {
     static func main() {
-        let pm = PriorityManager()
-        let defaults = UserDefaults.standard
+        let defaults = MemoryPreferences()
+        let pm = PriorityManager(defaults: defaults)
         var failures = 0
         func check(_ what: String, _ ok: Bool) {
             print((ok ? "ok   " : "FAIL ") + what)
@@ -150,11 +149,25 @@ import Foundation
         }
         check("a device last read hours ago shows as seen hours ago",
               pm.getStoredDevice(for: laptop).map { Date().timeIntervalSince($0.lastSeen) > 7 * 3600 } ?? false)
-        pm.markLastSeen(uids: ["laptop"])
+        pm.markLastSeen(rowIDs: ["output:laptop"])
         check("once it is disconnected, it was last seen now",
               pm.getStoredDevice(for: laptop).map { Date().timeIntervalSince($0.lastSeen) < 60 } ?? false)
         check("other devices keep their time",
               pm.getStoredDevice(for: dacMic).map { Date().timeIntervalSince($0.lastSeen) > 7 * 3600 } ?? false)
+
+        let endpointStore = MemoryPreferences()
+        let endpointManager = PriorityManager(defaults: endpointStore)
+        let duplexHistory = [
+            StoredDevice(uid: "duplex", name: "Headset", isInput: true, lastSeen: longAgo),
+            StoredDevice(uid: "duplex", name: "Headset", isInput: false, lastSeen: longAgo),
+        ]
+        endpointStore.set(try? JSONEncoder().encode(duplexHistory), forKey: "knownDevices")
+        endpointManager.markLastSeen(rowIDs: ["output:duplex"])
+        let history = endpointManager.getKnownDevices()
+        check("disconnecting output updates its own timestamp",
+              history.first(where: { !$0.isInput }).map { Date().timeIntervalSince($0.lastSeen) < 60 } ?? false)
+        check("disconnecting output preserves the microphone timestamp",
+              history.first(where: { $0.isInput })?.lastSeen == longAgo)
 
         print(failures == 0 ? "\nAll checks passed." : "\n\(failures) check(s) failed.")
         exit(failures == 0 ? 0 : 1)

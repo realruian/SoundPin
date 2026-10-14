@@ -9,7 +9,9 @@ import AppKit
 struct MenuBarView: View {
     @EnvironmentObject var audioManager: AudioManager
     @State private var deviceListHeight: CGFloat = 0
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
+    @Environment(\.panelReducedMotion) private var forcedReduceMotion
+    private var reduceMotion: Bool { systemReduceMotion || forcedReduceMotion }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -23,6 +25,16 @@ struct MenuBarView: View {
                 .padding(.bottom, 9.5)
 
             PanelDivider()
+
+            if audioManager.isDeviceReadUnavailable {
+                HStack {
+                    Text(L10n.deviceReadUnavailable).font(.caption)
+                    Spacer()
+                    Button(L10n.retry) { audioManager.retryDeviceRead() }
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 6)
+            }
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
@@ -94,10 +106,32 @@ struct MenuBarView: View {
             .padding(.top, 2)
             .padding(.bottom, 4.5)
         }
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { _ in
+            Task { await audioManager.refreshBatteryLevels() }
+        }
+        .task {
+            while !Task.isCancelled {
+                if NSApplication.shared.keyWindow?.isVisible == true {
+                    await audioManager.refreshBatteryLevels()
+                }
+                do { try await Task.sleep(nanoseconds: 30_000_000_000) }
+                catch { return }
+            }
+        }
         .frame(width: 308)
         .panelGeometryGroup()
         .panelWindowAnchor()
         .background(PanelPositioner())
+        .background(PanelWindowChrome())
+        .alert(L10n.deviceSwitchFailed, isPresented: Binding(
+            get: { audioManager.routingFailure != nil },
+            set: { if !$0 { audioManager.routingFailure = nil } }
+        ), presenting: audioManager.routingFailure) { failure in
+            Button(L10n.retry) { audioManager.retryRoutingFailure(failure) }
+            Button(L10n.done, role: .cancel) { audioManager.routingFailure = nil }
+        } message: { failure in
+            Text(L10n.deviceSwitchFailure(failure.device.name))
+        }
     }
 }
 
@@ -118,6 +152,8 @@ extension Color {
     static let panelGlyph = tone(0.515)
     /// The device glyph inside a circle that is not selected
     static let panelIcon = tone(0.44)
+    /// Battery text and glyph use the lighter tone of the native accessory row.
+    static let panelBattery = tone(0.42)
     /// Listening-mode symbols are lighter than the volume glyphs in the Sound menu.
     /// Keep a separate role so tuning them does not change device/volume icons.
     static let listeningModeIcon = tone(0.42)
@@ -318,6 +354,7 @@ struct PanelHeaderView: View {
                 }
                 .menuStyle(.borderlessButton)
                 .menuIndicator(.hidden)
+                .accessibilityLabel(L10n.options)
                 .fixedSize()
             }
         }
@@ -408,7 +445,7 @@ struct DeviceSectionView: View {
     let title: String
     let devices: [AudioDevice]
     let currentDeviceId: AudioObjectID?
-    let onMove: (IndexSet, Int) -> Void
+    let onMove: (DeviceMove) -> Void
     let onSelect: (AudioDevice) -> Void
     var onHide: ((AudioDevice) -> Void)?
     var category: OutputCategory?
@@ -468,85 +505,5 @@ struct PanelMenuRow: View {
         .buttonStyle(.plain)
         .padding(.horizontal, 6)
         .onHover { isHovering = $0 }
-    }
-}
-
-// Picks the symbol shown in a device's round icon
-enum DeviceGlyph {
-    static func symbol(for device: AudioDevice, category: OutputCategory?) -> String {
-        symbol(name: device.name, type: device.type, category: category, transport: device.transportType)
-    }
-
-    static func symbol(name: String, type: AudioDeviceType, category: OutputCategory?, transport: UInt32?) -> String {
-        candidates(name: name.lowercased(), type: type, category: category, transport: transport)
-            .first(where: exists) ?? (type == .input ? "mic.fill" : "hifispeaker.fill")
-    }
-
-    // Most specific first; a symbol this macOS does not have is skipped
-    private static func candidates(name: String, type: AudioDeviceType, category: OutputCategory?, transport: UInt32?) -> [String] {
-        func has(_ words: String...) -> Bool {
-            words.contains { name.contains($0) }
-        }
-
-        // Apple and Beats products, recognised by name
-        if has("airpods max") { return ["airpods.max", "headphones"] }
-        if has("airpods pro 3") { return ["airpods.pro.gen3", "airpods.pro"] }
-        if has("airpods pro") { return ["airpods.pro"] }
-        if has("airpods 4", "airpods4") { return ["airpods.gen4", "airpods"] }
-        if has("airpods 3", "airpods3") { return ["airpods.gen3", "airpods"] }
-        if has("airpods") { return ["airpods"] }
-        if has("earpods") { return ["earpods", "headphones"] }
-        if has("powerbeats pro") { return ["beats.powerbeats.pro", "beats.earphones", "headphones"] }
-        if has("powerbeats") { return ["beats.powerbeats", "beats.earphones", "headphones"] }
-        if has("beats fit") { return ["beats.fit.pro", "beats.earphones", "headphones"] }
-        if has("studio buds") { return ["beats.studiobuds", "beats.earphones", "headphones"] }
-        if has("solo buds") { return ["beats.solobuds", "beats.earphones", "headphones"] }
-        if has("beats flex", "beatsx", "urbeats") { return ["beats.earphones", "headphones"] }
-        if has("beats pill") { return ["beats.pill", "hifispeaker.fill"] }
-        if has("beats") { return ["beats.headphones", "headphones"] }
-        if has("iphone") { return ["iphone"] }
-        if has("ipad") { return ["ipad"] }
-        if has("homepod mini") { return ["homepodmini.fill", "homepod.fill"] }
-        if has("homepod") { return ["homepod.fill"] }
-        if has("apple tv") { return ["appletv.fill", "tv"] }
-        if has("vision pro") { return ["vision.pro", "headphones"] }
-        if has("macbook") { return ["macbook", "laptopcomputer"] }
-        if has("mac mini") { return ["macmini.fill", "desktopcomputer"] }
-        if has("mac studio") { return ["macstudio.fill", "desktopcomputer"] }
-        if has("imac", "mac pro") { return ["desktopcomputer"] }
-
-        if has("电视") || name.hasSuffix(" tv") || name.hasPrefix("tv ") || name.contains(" tv ") {
-            return ["tv"]
-        }
-        // Screens: by name, or anything that plays over HDMI / DisplayPort
-        if has("monitor", "display", "显示器")
-            || transport == kAudioDeviceTransportTypeDisplayPort
-            || transport == kAudioDeviceTransportTypeHDMI {
-            return ["display"]
-        }
-        if transport == kAudioDeviceTransportTypeAirPlay { return ["airplayaudio"] }
-
-        if type == .output {
-            if category == .headphone { return ["headphones"] }
-            if transport == kAudioDeviceTransportTypeBuiltIn { return ["desktopcomputer"] }
-            return ["hifispeaker.fill"]
-        }
-
-        // A microphone that belongs to a headset shows as the headset
-        if transport == kAudioDeviceTransportTypeBluetooth
-            || transport == kAudioDeviceTransportTypeBluetoothLE
-            || has("headset", "headphone", "earphone", "耳机", "耳麦") {
-            return ["headphones"]
-        }
-        return ["mic.fill"]
-    }
-
-    private static var known: [String: Bool] = [:]
-
-    private static func exists(_ symbol: String) -> Bool {
-        if let cached = known[symbol] { return cached }
-        let found = NSImage(systemSymbolName: symbol, accessibilityDescription: nil) != nil
-        known[symbol] = found
-        return found
     }
 }
