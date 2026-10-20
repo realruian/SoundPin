@@ -24,7 +24,8 @@ import CoreAudio
             prefs.set(["a", "b", "c"], forKey: "speakerPriorities")
             let clock = TestAudioScheduler()
             let manager = AudioManager(deviceService: audio, listeningModeService: SimulatedListeningModes(),
-                                       priorityManager: PriorityManager(defaults: prefs), scheduler: clock)
+                                       priorityManager: PriorityManager(defaults: prefs), scheduler: clock,
+                                       writer: InlineAudioWriter())
             return (manager, audio, prefs, clock)
         }
         func notify(_ audio: SimulatedAudioService) async {

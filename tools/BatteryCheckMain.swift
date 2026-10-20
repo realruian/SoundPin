@@ -57,7 +57,8 @@ import CoreAudio
         let preferences = MemoryPreferences(); preferences.set(true, forKey: "customMode")
         let battery = BatteryFixture(); battery.result = [address:low, "112233445566": DeviceBattery(main: 10)!]
         let manager = AudioManager(deviceService: audio, listeningModeService: SimulatedListeningModes(),
-                                   priorityManager: PriorityManager(defaults: preferences), batteryService: battery)
+                                   priorityManager: PriorityManager(defaults: preferences), writer: InlineAudioWriter(),
+                                   batteryService: battery)
         let start = Date()
         await manager.refreshBatteryLevels(now: start)
         check(manager.battery(for: pods) == low && manager.batteryLevels.count == 1, "only current audio endpoints receive battery values")

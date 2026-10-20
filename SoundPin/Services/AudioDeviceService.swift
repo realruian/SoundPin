@@ -265,7 +265,16 @@ class AudioDeviceService: AudioDeviceProviding {
             mElement: kAudioObjectPropertyElementMain
         )
 
-        listenerBlock = { [weak self] _, _ in
+        listenerBlock = { [weak self] count, addresses in
+            let fired = (0..<Int(count)).map { index -> String in
+                switch addresses[index].mSelector {
+                case kAudioHardwarePropertyDevices: return "devices"
+                case kAudioHardwarePropertyDefaultInputDevice: return "defaultInput"
+                case kAudioHardwarePropertyDefaultOutputDevice: return "defaultOutput"
+                default: return "other"
+                }
+            }
+            AudioLog.routing.notice("HAL notification: \(fired.joined(separator: ","), privacy: .public)")
             self?.scheduleDeviceChange()
         }
 

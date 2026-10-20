@@ -23,6 +23,7 @@ import CoreAudio
         if listeningModes { modes.states[battery ? "AA-BB-CC-DD-EE-FF:output" : "demo-9001"] = ListeningModeState(currentRawValue: 2, supportedMask: 7) }
         modes.appliesImmediately = !delayedModes
         return AudioManager(deviceService: audio, listeningModeService: modes, priorityManager: priority,
+                            writer: InlineAudioWriter(),
                             batteryService: battery ? PreviewBattery() : nil)
     }
 }

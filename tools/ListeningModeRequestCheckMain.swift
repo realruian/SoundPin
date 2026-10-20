@@ -30,7 +30,8 @@ import CoreAudio
             prefs.set(true, forKey: "customMode")
             let clock = TestAudioScheduler()
             let manager = AudioManager(deviceService: audio, listeningModeService: modes,
-                                       priorityManager: PriorityManager(defaults: prefs), scheduler: clock)
+                                       priorityManager: PriorityManager(defaults: prefs), scheduler: clock,
+                                       writer: InlineAudioWriter())
             return (manager, audio, modes, prefs, clock)
         }
         func drain() async { for _ in 0..<10 { await Task.yield() } }

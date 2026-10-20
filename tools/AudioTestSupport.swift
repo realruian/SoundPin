@@ -132,3 +132,26 @@ final class SimulatedListeningModes: ListeningModeProviding {
         now = end
     }
 }
+
+/// Writes on the spot, so that checks see a route settle within the call that asked for it.
+@MainActor final class InlineAudioWriter: AudioWriting {
+    func write(_ work: @escaping () -> AudioObjectID?, then done: @escaping @MainActor (AudioObjectID?) -> Void) {
+        done(work())
+    }
+}
+
+/// Holds writes until `flush`, like a write still blocked in the system.
+@MainActor final class DeferredAudioWriter: AudioWriting {
+    private var queued: [(() -> AudioObjectID?, @MainActor (AudioObjectID?) -> Void)] = []
+    var pendingCount: Int { queued.count }
+    func write(_ work: @escaping () -> AudioObjectID?, then done: @escaping @MainActor (AudioObjectID?) -> Void) {
+        queued.append((work, done))
+    }
+    /// Writes in order, as the serial queue does, then reports each in order
+    func flush() {
+        let jobs = queued
+        queued = []
+        let results = jobs.map { $0.0() }
+        for (job, result) in zip(jobs, results) { job.1(result) }
+    }
+}

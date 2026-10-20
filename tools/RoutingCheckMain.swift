@@ -16,7 +16,8 @@ import CoreAudio
         }
         let a = device(101, "a"), b = device(102, "b"), c = device(103, "c")
         func fixture(_ devices: [AudioDevice] = [a, b, c], current: UInt32 = 103,
-                     paused: Bool = true, inventoryReady: Bool = true) -> (AudioManager, SimulatedAudioService, MemoryPreferences, TestAudioScheduler) {
+                     paused: Bool = true, inventoryReady: Bool = true,
+                     writer: AudioWriting? = nil) -> (AudioManager, SimulatedAudioService, MemoryPreferences, TestAudioScheduler) {
             let audio = SimulatedAudioService()
             audio.devices = devices
             audio.inventoryAvailable = inventoryReady
@@ -26,7 +27,8 @@ import CoreAudio
             prefs.set(["a", "b", "c"], forKey: "speakerPriorities")
             let clock = TestAudioScheduler()
             let manager = AudioManager(deviceService: audio, listeningModeService: SimulatedListeningModes(),
-                                       priorityManager: PriorityManager(defaults: prefs), scheduler: clock)
+                                       priorityManager: PriorityManager(defaults: prefs), scheduler: clock,
+                                       writer: writer ?? InlineAudioWriter())
             return (manager, audio, prefs, clock)
         }
         func notify(_ audio: SimulatedAudioService) async {
@@ -236,6 +238,64 @@ import CoreAudio
             audio.inventoryAvailable = true
             clock.advance(by: 0.31)
             check(m.currentMode == .headphone && audio.writes.isEmpty, "resume read recovery follows the route chosen while paused")
+        }
+        do {
+            let (m, audio, _, clock) = fixture(current: a.id, paused: false)
+            for _ in 0..<6 {
+                audio.defaults[.output] = c.id
+                await notify(audio)
+            }
+            check(audio.writes.count == 4 && audio.defaults[.output] == c.id && m.isHoldingBack(.output),
+                  "a tug of war over the default stops after four automatic writes")
+            clock.advance(by: 30)
+            check(audio.writes.count == 4, "a held-back side is left alone")
+            clock.advance(by: 30)
+            check(audio.defaults[.output] == a.id && !m.isHoldingBack(.output), "the hold-back ends and the pick returns")
+        }
+        do {
+            let (m, audio, _, _) = fixture(current: a.id, paused: false)
+            for _ in 0..<5 {
+                audio.defaults[.output] = c.id
+                await notify(audio)
+            }
+            m.selectOutputDevice(b, in: .speaker)
+            check(audio.defaults[.output] == b.id && !m.isHoldingBack(.output), "a manual pick ends the hold-back")
+        }
+        do {
+            let (m, audio, _, clock) = fixture(current: a.id, paused: false)
+            for _ in 0..<10 {
+                audio.defaults[.output] = c.id
+                await notify(audio)
+                clock.advance(by: 3)
+            }
+            check(audio.writes.count == 10 && !m.isHoldingBack(.output), "occasional changes are always written back")
+        }
+        do {
+            let (m, audio, _, _) = fixture(current: a.id, paused: false)
+            let reads = audio.inventoryReads
+            audio.defaults[.output] = c.id
+            await notify(audio)
+            check(audio.inventoryReads - reads == 1 && audio.defaults[.output] == a.id && m.currentOutputId == a.id,
+                  "a device change reads the inventory once")
+        }
+        do {
+            let writer = DeferredAudioWriter()
+            let (m, audio, _, _) = fixture(paused: false, writer: writer)
+            check(audio.writes.isEmpty && writer.pendingCount == 1 && m.pendingRouteRows == [a.rowID]
+                  && m.currentOutputId == c.id, "a route waits for its write off the main thread")
+            for _ in 0..<5 { await notify(audio) }
+            check(writer.pendingCount == 1, "a write in progress is not asked for again")
+            writer.flush()
+            check(audio.defaults[.output] == a.id && m.currentOutputId == a.id && m.pendingRouteRows.isEmpty,
+                  "the finished write completes the route")
+        }
+        do {
+            let writer = DeferredAudioWriter()
+            let (m, audio, _, _) = fixture(paused: false, writer: writer)
+            m.selectOutputDevice(b, in: .speaker)
+            writer.flush()
+            check(audio.writes.map(\.uid) == ["a", "b"] && audio.defaults[.output] == b.id && m.currentOutputId == b.id,
+                  "a manual pick made during a write lands last")
         }
         print("\(count) routing checks passed. No real audio service or persistent settings used.")
     }

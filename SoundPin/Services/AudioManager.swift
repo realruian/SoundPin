@@ -76,6 +76,7 @@ class AudioManager: ObservableObject {
     private let deviceService: AudioDeviceProviding
     private let listeningModeService: ListeningModeProviding
     private let scheduler: AudioScheduling
+    private let writer: AudioWriting
     let priorityManager: PriorityManager
     private var connectedRowIDs: Set<String> = []
     private var connectedDevices: [AudioDevice] = []
@@ -89,6 +90,22 @@ class AudioManager: ObservableObject {
     private let retryDelays: [TimeInterval] = [0.3, 1.0]
     private var pendingRoutes: [AudioDeviceType: RouteRequest] = [:]
     private var failedRows: [AudioDeviceType: Set<String>] = [:]
+    /// True while one pass of work runs on an inventory read at its start, so that the
+    /// routes it requests do not read every device again
+    private var inventoryIsFresh = false
+
+    // Another app or the system may keep setting its own default device. Writing the
+    // pick back each time would start a tug of war that restarts audio in every app
+    // using it. After `correctionLimit` automatic writes of one side within
+    // `correctionWindow`, the app leaves that side alone for `correctionPause`.
+    private let correctionLimit = 4
+    private let correctionWindow: TimeInterval = 10
+    private let correctionPause: TimeInterval = 60
+    private var recentCorrections: [AudioDeviceType: Int] = [:]
+    private var correctionPauses: [AudioDeviceType: ScheduledAudioAction] = [:]
+
+    /// Whether automatic picks of this side are held back after a tug of war
+    func isHoldingBack(_ type: AudioDeviceType) -> Bool { correctionPauses[type] != nil }
 
     struct RoutingFailure: Identifiable {
         let id = UUID()
@@ -104,6 +121,9 @@ class AudioManager: ObservableObject {
         let category: OutputCategory?
         let promote: Bool
         var attempts = 0
+        var isWriting = false
+        /// Retries of one request are one correction, not several
+        var isCountedAsCorrection = false
         var scheduled: ScheduledAudioAction?
         init(device: AudioDevice, manual: Bool, category: OutputCategory?, promote: Bool) {
             self.device = device; self.manual = manual; self.category = category; self.promote = promote
@@ -181,12 +201,13 @@ class AudioManager: ObservableObject {
 
     init(deviceService: AudioDeviceProviding, listeningModeService: ListeningModeProviding,
          priorityManager: PriorityManager, scheduler: AudioScheduling? = nil,
-         batteryService: DeviceBatteryProviding? = nil) {
+         writer: AudioWriting? = nil, batteryService: DeviceBatteryProviding? = nil) {
         self.batteryService = batteryService
         self.deviceService = deviceService
         self.listeningModeService = listeningModeService
         self.priorityManager = priorityManager
         self.scheduler = scheduler ?? MainQueueAudioScheduler()
+        self.writer = writer ?? BackgroundAudioWriter()
         currentMode = priorityManager.currentMode
         isCustomMode = priorityManager.isCustomMode
         refreshDevices()
@@ -510,8 +531,10 @@ class AudioManager: ObservableObject {
             guard refreshDevices() else { return }
             followOutputInUse()
             needsOutputReconciliation = false
-            pickAgain(.input)
-            pickAgain(.output)
+            onFreshInventory {
+                pickAgain(.input)
+                pickAgain(.output)
+            }
         }
     }
 
@@ -718,7 +741,7 @@ class AudioManager: ObservableObject {
     }
 
     private func applyHighestPriorityInput() {
-        guard !isKeepingHandPick(.input) else { return }
+        guard !isKeepingHandPick(.input), !isHoldingBack(.input) else { return }
         let eligible = inputDevices.filter { canPickAutomatically($0, in: nil) }
         if let target = RoutingPolicy.candidate(in: eligible, failedRowIDs: failedRows[.input] ?? [],
             currentID: currentInputId, connected: connectedDevices, type: .input) {
@@ -727,7 +750,7 @@ class AudioManager: ObservableObject {
     }
 
     private func applyHighestPriorityOutput() {
-        guard !isKeepingHandPick(.output) else { return }
+        guard !isKeepingHandPick(.output), !isHoldingBack(.output) else { return }
         let eligible = activeOutputDevices.filter { canPickAutomatically($0, in: currentMode) }
         if let target = RoutingPolicy.candidate(in: eligible, failedRowIDs: failedRows[.output] ?? [],
             currentID: currentOutputId, connected: connectedDevices, type: .output) {
@@ -749,9 +772,15 @@ class AudioManager: ObservableObject {
             cancelRoute(device.type)
             failedRows[device.type] = []
             routingFailure = nil
+            // A device picked by hand ends a hold-back: the user has settled the tug of war
+            endHoldingBack(device.type)
         }
         let request = RouteRequest(device: device, manual: manual, category: category,
                                    promote: manual && !isCustomMode)
+        AudioLog.routing.notice("""
+            route request: \(device.type.rawValue, privacy: .public) -> \(device.name, privacy: .public) \
+            \(manual ? "manual" : "automatic", privacy: .public) mode=\(self.currentMode.rawValue, privacy: .public)
+            """)
         pendingRoutes[device.type] = request
         pendingRouteRows = Set(pendingRoutes.values.map { $0.device.rowID })
         attemptRoute(request)
@@ -759,10 +788,10 @@ class AudioManager: ObservableObject {
 
     private func attemptRoute(_ request: RouteRequest) {
         let type = request.device.type
-        guard pendingRoutes[type]?.id == request.id else { return }
+        guard pendingRoutes[type]?.id == request.id, !request.isWriting else { return }
         guard request.manual || !isCustomMode else { cancelRoute(type); return }
         request.attempts += 1
-        guard refreshDevices() else { scheduleRouteRetry(request); return }
+        guard inventoryIsFresh || refreshDevices() else { scheduleRouteRetry(request); return }
         guard let device = connectedDevices.first(where: { $0.rowID == request.device.rowID }) else {
             finishFailure(request)
             return
@@ -777,15 +806,77 @@ class AudioManager: ObservableObject {
             return
         }
         if actual == device.id {
-            completeRoute(request, device: device)
+            completeRoute(request, device: device, changed: false)
             return
         }
-        _ = deviceService.setDefaultDevice(device)
-        if deviceService.getCurrentDefaultDevice(type: type) == device.id {
-            completeRoute(request, device: device)
-        } else {
-            scheduleRouteRetry(request)
+        if !request.manual && !request.isCountedAsCorrection {
+            guard noteCorrection(type) else { cancelRoute(type); return }
+            request.isCountedAsCorrection = true
         }
+        request.isWriting = true
+        let service = deviceService
+        let attempt = request.attempts
+        let previous = logName(actual, type)
+        writer.write({
+            let accepted = service.setDefaultDevice(device)
+            let after = service.getCurrentDefaultDevice(type: type)
+            AudioLog.routing.notice("""
+                write default \(type.rawValue, privacy: .public): \(previous, privacy: .public) \
+                -> \(device.name, privacy: .public) attempt \(attempt) accepted=\(accepted)
+                """)
+            return after
+        }, then: { [weak self] after in
+            request.isWriting = false
+            guard let self, self.pendingRoutes[type]?.id == request.id else { return }
+            if after == device.id {
+                self.completeRoute(request, device: device, changed: true)
+            } else {
+                self.scheduleRouteRetry(request)
+            }
+        })
+    }
+
+    /// Counts an automatic write of this side. False when it is one too many within the
+    /// window: the side is then held back, and the write must not happen.
+    private func noteCorrection(_ type: AudioDeviceType) -> Bool {
+        guard !isHoldingBack(type) else { return false }
+        let count = recentCorrections[type, default: 0] + 1
+        if count > correctionLimit {
+            AudioLog.routing.notice("""
+                hold back \(type.rawValue, privacy: .public): \(self.correctionLimit) automatic writes \
+                within \(Int(self.correctionWindow))s, leaving the default to others for \(Int(self.correctionPause))s
+                """)
+            correctionPauses[type] = scheduler.schedule(after: correctionPause) { [weak self] in
+                guard let self else { return }
+                self.correctionPauses[type] = nil
+                self.recentCorrections[type] = 0
+                AudioLog.routing.notice("hold back \(type.rawValue, privacy: .public) ended")
+                guard self.refreshDevices() else { return }
+                self.onFreshInventory { self.pickAgain(type) }
+            }
+            return false
+        }
+        recentCorrections[type] = count
+        _ = scheduler.schedule(after: correctionWindow) { [weak self] in
+            guard let self, let current = self.recentCorrections[type], current > 0 else { return }
+            self.recentCorrections[type] = current - 1
+        }
+        return true
+    }
+
+    private func endHoldingBack(_ type: AudioDeviceType) {
+        guard let pause = correctionPauses.removeValue(forKey: type) else { return }
+        pause.cancel()
+        recentCorrections[type] = 0
+        AudioLog.routing.notice("hold back \(type.rawValue, privacy: .public) ended by a manual pick")
+    }
+
+    /// Runs `work` on the inventory just read, instead of reading it again for each route
+    private func onFreshInventory(_ work: () -> Void) {
+        let outer = inventoryIsFresh
+        inventoryIsFresh = true
+        defer { inventoryIsFresh = outer }
+        work()
     }
 
     private func scheduleRouteRetry(_ request: RouteRequest) {
@@ -799,14 +890,17 @@ class AudioManager: ObservableObject {
             } else if self.refreshDevices(),
                       let device = self.connectedDevices.first(where: { $0.rowID == request.device.rowID }),
                       self.deviceService.getCurrentDefaultDevice(type: device.type) == device.id {
-                self.completeRoute(request, device: device)
+                self.completeRoute(request, device: device, changed: true)
             } else {
                 self.finishFailure(request)
             }
         }
     }
 
-    private func completeRoute(_ request: RouteRequest, device: AudioDevice) {
+    /// `changed` is true after this app wrote the default; otherwise the volume and mute
+    /// state were read with the inventory that found the device already in use.
+    private func completeRoute(_ request: RouteRequest, device: AudioDevice, changed: Bool) {
+        AudioLog.routing.notice("route done: \(device.type.rawValue, privacy: .public) = \(device.name, privacy: .public)")
         cancelRoute(device.type)
         if device.type == .input { currentInputId = device.id } else { currentOutputId = device.id }
         if request.manual {
@@ -817,8 +911,10 @@ class AudioManager: ObservableObject {
             }
         }
         if routingFailure?.device.type == device.type { routingFailure = nil }
-        refreshVolume()
-        refreshMuteStatus()
+        if changed {
+            refreshVolume()
+            refreshMuteStatus()
+        }
     }
 
     private func promoteConfirmedDevice(_ device: AudioDevice, category: OutputCategory?) {
@@ -836,6 +932,10 @@ class AudioManager: ObservableObject {
 
     private func finishFailure(_ request: RouteRequest) {
         guard pendingRoutes[request.device.type]?.id == request.id else { return }
+        AudioLog.routing.notice("""
+            route failed: \(request.device.type.rawValue, privacy: .public) -> \(request.device.name, privacy: .public) \
+            after \(request.attempts) attempts
+            """)
         cancelRoute(request.device.type)
         failedRows[request.device.type, default: []].insert(request.device.rowID)
         routingFailure = RoutingFailure(device: request.device, manual: request.manual, category: request.category)
@@ -882,16 +982,38 @@ class AudioManager: ObservableObject {
         deviceService.startListening()
     }
 
+    /// A device as it reads in the log: its name, or its id when it is not in the inventory
+    private func logName(_ id: AudioObjectID?, _ type: AudioDeviceType) -> String {
+        guard let id else { return "unreadable" }
+        return connectedDevices.first { $0.id == id && $0.type == type }?.name ?? "id \(id)"
+    }
+
+    private func logNames(_ rowIDs: Set<String>, among devices: [AudioDevice]) -> String {
+        rowIDs.sorted().map { row in devices.first { $0.rowID == row }.map { "\($0.type.rawValue):\($0.name)" } ?? row }
+            .joined(separator: ", ")
+    }
+
     private func handleDeviceChange() {
         let oldConnectedRows = previousConnectedRowIDs
+        let oldDevices = connectedDevices
         let inventoryReady = refreshDevices()
         refreshVolume()
         refreshMuteStatus()
-        guard inventoryReady else { return }
+        guard inventoryReady else {
+            AudioLog.routing.notice("device change: inventory unreadable")
+            return
+        }
 
         // Detect newly connected devices
         var newlyConnectedRowIDs = connectedRowIDs.subtracting(oldConnectedRows)
         previousConnectedRowIDs = connectedRowIDs
+        AudioLog.routing.notice("""
+            device change: input=\(self.logName(self.currentInputId, .input), privacy: .public) \
+            output=\(self.logName(self.currentOutputId, .output), privacy: .public) \
+            mode=\(self.currentMode.rawValue, privacy: .public) custom=\(self.isCustomMode) \
+            added=[\(self.logNames(newlyConnectedRowIDs, among: self.connectedDevices), privacy: .public)] \
+            removed=[\(self.logNames(oldConnectedRows.subtracting(self.connectedRowIDs), among: oldDevices), privacy: .public)]
+            """)
         // "Last seen" is when a device went away, not when the list was last read with it in it
         priorityManager.markLastSeen(rowIDs: oldConnectedRows.subtracting(connectedRowIDs))
 
@@ -908,14 +1030,16 @@ class AudioManager: ObservableObject {
                 finishFailure(request)
                 continue
             }
-            if deviceService.getCurrentDefaultDevice(type: device.type) == device.id {
-                completeRoute(request, device: device)
+            if device.id == (device.type == .input ? currentInputId : currentOutputId) {
+                completeRoute(request, device: device, changed: false)
             }
         }
 
         // Auto-switch mode only when a new headphone connects or all headphones disconnect
-        pickAgain(.input)
-        pickAgain(.output, connected: newlyConnectedRowIDs)
+        onFreshInventory {
+            pickAgain(.input)
+            pickAgain(.output, connected: newlyConnectedRowIDs)
+        }
     }
 
     /// Automatically switches between headphone and speaker mode based on device connections.
@@ -938,10 +1062,12 @@ class AudioManager: ObservableObject {
 
         if newHeadphoneConnected && currentMode != .headphone {
             // A new headphone just connected - switch to headphone mode
+            AudioLog.routing.notice("mode -> headphone: headphones connected")
             currentMode = .headphone
             priorityManager.currentMode = .headphone
         } else if !hasConnectedHeadphones && hasConnectedSpeakers && currentMode == .headphone && !isKeepingHandPick(.output) {
             // All headphones disconnected - switch back to speaker mode
+            AudioLog.routing.notice("mode -> speaker: no headphones left")
             currentMode = .speaker
             priorityManager.currentMode = .speaker
         }

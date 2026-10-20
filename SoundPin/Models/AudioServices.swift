@@ -1,5 +1,12 @@
 import Foundation
 import CoreAudio
+import os
+
+/// Device events and routing decisions, for tracing a switch after the fact:
+/// log show --last 10m --predicate 'subsystem == "io.github.realruian.SoundPin"'
+enum AudioLog {
+    static let routing = Logger(subsystem: "io.github.realruian.SoundPin", category: "routing")
+}
 
 /// Failure is not an empty inventory. A partial read must never drive routing.
 enum DeviceInventory {
@@ -66,6 +73,23 @@ extension UserDefaults: PreferenceStore {}
             action()
         }
         return token
+    }
+}
+
+/// Runs a default-device write and its read-back, then reports on the main actor.
+/// A write to a Bluetooth device in transition can block for most of a second.
+@MainActor protocol AudioWriting {
+    func write(_ work: @escaping () -> AudioObjectID?, then done: @escaping @MainActor (AudioObjectID?) -> Void)
+}
+
+/// One serial queue, so that writes land in the order they were asked for.
+@MainActor final class BackgroundAudioWriter: AudioWriting {
+    private let queue = DispatchQueue(label: "io.github.realruian.SoundPin.route-writes", qos: .userInitiated)
+    func write(_ work: @escaping () -> AudioObjectID?, then done: @escaping @MainActor (AudioObjectID?) -> Void) {
+        queue.async {
+            let result = work()
+            DispatchQueue.main.async { MainActor.assumeIsolated { done(result) } }
+        }
     }
 }
 
