@@ -9,32 +9,39 @@ import AppKit
 struct MenuBarView: View {
     @EnvironmentObject var audioManager: AudioManager
     @State private var deviceListHeight: CGFloat = 0
+    @State private var fixedContentHeight: CGFloat = 0
+    @Environment(\.maximumPanelHeight) private var maximumPanelHeight
     @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
     @Environment(\.panelReducedMotion) private var forcedReduceMotion
     private var reduceMotion: Bool { systemReduceMotion || forcedReduceMotion }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            PanelHeaderView()
-                .padding(.horizontal, 14)
-                .padding(.top, 12)
+            VStack(alignment: .leading, spacing: 0) {
+                PanelHeaderView()
+                    .padding(.horizontal, 14)
+                    .padding(.top, 12)
 
-            VolumeSliderView()
-                .padding(.horizontal, 14)
-                .padding(.top, 6.5)
-                .padding(.bottom, 9.5)
+                VolumeSliderView()
+                    .padding(.horizontal, 14)
+                    .padding(.top, 6.5)
+                    .padding(.bottom, 9.5)
 
-            PanelDivider()
+                PanelDivider()
 
-            if audioManager.isDeviceReadUnavailable {
-                HStack {
-                    Text(L10n.deviceReadUnavailable).font(.caption)
-                    Spacer()
-                    Button(L10n.retry) { audioManager.retryDeviceRead() }
+                if audioManager.isDeviceReadUnavailable {
+                    HStack {
+                        Text(L10n.deviceReadUnavailable).font(.caption)
+                        Spacer()
+                        Button(L10n.retry) { audioManager.retryDeviceRead() }
+                    }
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 6)
                 }
-                .padding(.horizontal, 14)
-                .padding(.vertical, 6)
             }
+            .background(GeometryReader { proxy in
+                Color.clear.preference(key: PanelFixedContentHeightKey.self, value: proxy.size.height)
+            })
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
@@ -84,8 +91,10 @@ struct MenuBarView: View {
                     Color.clear.preference(key: DeviceListHeightKey.self, value: proxy.size.height)
                 })
             }
-            // A ScrollView has no height of its own, so size it to its content
-            .frame(height: min(deviceListHeight, 460))
+            // Preserve the normal content height, but leave the measured header/footer visible
+            // when this screen has less room than the normal 460 pt list limit.
+            .frame(height: PanelPlacement.listHeight(contentHeight: deviceListHeight,
+                fixedContentHeight: fixedContentHeight, maximumPanelHeight: maximumPanelHeight))
             .panelGeometryGroup()
             .onPreferenceChange(DeviceListHeightKey.self) { height in
                 // Geometry reports the target layout. Animate that change once,
@@ -96,16 +105,22 @@ struct MenuBarView: View {
                 withAnimation(animation) { deviceListHeight = height }
             }
 
-            PanelDivider()
+            VStack(alignment: .leading, spacing: 0) {
+                PanelDivider()
 
-            PanelMenuRow(title: L10n.soundSettings) {
-                if let url = URL(string: "x-apple.systempreferences:com.apple.Sound-Settings.extension") {
-                    NSWorkspace.shared.open(url)
+                PanelMenuRow(title: L10n.soundSettings) {
+                    if let url = URL(string: "x-apple.systempreferences:com.apple.Sound-Settings.extension") {
+                        NSWorkspace.shared.open(url)
+                    }
                 }
+                .padding(.top, 2)
+                .padding(.bottom, 4.5)
             }
-            .padding(.top, 2)
-            .padding(.bottom, 4.5)
+            .background(GeometryReader { proxy in
+                Color.clear.preference(key: PanelFixedContentHeightKey.self, value: proxy.size.height)
+            })
         }
+        .onPreferenceChange(PanelFixedContentHeightKey.self) { fixedContentHeight = $0 }
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { _ in
             Task { await audioManager.refreshBatteryLevels() }
         }
@@ -209,6 +224,18 @@ struct PanelHeaderView: View {
                 .buttonStyle(.plain)
                 .help(L10n.resumeAutoSwitchHelp)
                 .accessibilityLabel(L10n.autoSwitchPaused)
+            } else if !audioManager.heldBackTypes.isEmpty {
+                Button {
+                    audioManager.resumeRoutingAfterConflict()
+                } label: {
+                    Label(L10n.routingConflictPaused, systemImage: "pause.circle")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundColor(.orange)
+                }
+                .buttonStyle(.plain)
+                .help(conflictHelp)
+                .accessibilityLabel(L10n.routingConflictPaused)
+                .accessibilityHint(conflictHelp)
             }
 
             Spacer()
@@ -232,6 +259,9 @@ struct PanelHeaderView: View {
                         get: { launchManager.isEnabled },
                         set: { launchManager.setEnabled($0) }
                     ))
+                    if launchManager.state == .approvalRequired {
+                        Button(L10n.loginApprovalRequired) { launchManager.openSettings() }
+                    }
                     Divider()
                     Button(L10n.editDeviceList) {
                         audioManager.toggleEditMode()
@@ -278,6 +308,29 @@ struct PanelHeaderView: View {
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { _ in
             launchManager.refresh()
         }
+        .alert(loginNoticeTitle, isPresented: Binding(
+            get: { launchManager.notice != nil },
+            set: { if !$0 { launchManager.notice = nil } }
+        ), presenting: launchManager.notice) { notice in
+            if notice == .approvalRequired {
+                Button(L10n.openSystemSettings) { launchManager.openSettings() }
+            }
+            Button(L10n.done, role: .cancel) { launchManager.notice = nil }
+        } message: { notice in
+            switch notice {
+            case .approvalRequired: Text(L10n.loginApprovalMessage)
+            case .failed(let detail): Text(detail)
+            }
+        }
+    }
+
+    private var conflictHelp: String {
+        L10n.routingConflictHelp(input: audioManager.heldBackTypes.contains(.input),
+                                 output: audioManager.heldBackTypes.contains(.output))
+    }
+
+    private var loginNoticeTitle: String {
+        launchManager.notice == .approvalRequired ? L10n.openAtLogin : L10n.loginChangeFailed
     }
 }
 

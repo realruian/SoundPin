@@ -33,6 +33,20 @@ import CoreGraphics
         // Automatically hidden menu bar: the visible frame includes it; use the item's window.
         check("Hidden menu bar", item: CGRect(x: 700, y: 1089, width: 38, height: 28),
               visible: CGRect(x: 0, y: 0, width: 1728, height: 1117), itemWindowBottom: 1089, panelLeft: 700, top: 1089)
+        let short = PanelPlacement.layout(itemFrame: CGRect(x: 700, y: 570, width: 38, height: 28),
+            itemWindowFrame: CGRect(x: 700, y: 570, width: 38, height: 28),
+            screenFrame: CGRect(x: 0, y: 0, width: 1024, height: 600),
+            visibleFrame: CGRect(x: 0, y: 70, width: 1024, height: 500))
+        precondition(short.maximumPanelHeight == 467, "small screen retains lower shadow room")
+        precondition(PanelPlacement.listHeight(contentHeight: 1000, fixedContentHeight: 99, maximumPanelHeight: short.maximumPanelHeight) == 368,
+                     "small screen preserves header and footer")
+        precondition(PanelPlacement.listHeight(contentHeight: 1000, fixedContentHeight: 129, maximumPanelHeight: short.maximumPanelHeight) == 338,
+                     "an error row reduces list space instead of overflowing")
+        precondition(PanelPlacement.listHeight(contentHeight: 1000, fixedContentHeight: 99, maximumPanelHeight: 900) == 460,
+                     "normal screens retain the original list limit")
+        precondition(PanelPlacement.listHeight(contentHeight: 200, fixedContentHeight: 99, maximumPanelHeight: 900) == 200,
+                     "short device lists retain their natural height")
+        checks += 5
         print("Passed \(checks) panel placement cases.")
     }
 }

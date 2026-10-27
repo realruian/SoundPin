@@ -66,7 +66,7 @@ The app was renamed to SoundPin in version 2.2 with a new bundle identifier. Rem
 
 ### Build from source
 
-Requires Xcode 26 or later (the app icon is an Icon Composer file; the Command Line Tools alone cannot build the project):
+Requires Xcode 27 or later with the macOS 27 SDK (the menu panel uses SDK 27 declarations and the app icon is an Icon Composer file; the Command Line Tools alone cannot build the project). The deployment target remains macOS 13:
 
 ```bash
 git clone https://github.com/realruian/SoundPin.git
@@ -74,7 +74,7 @@ cd SoundPin
 ./install.sh
 ```
 
-`install.sh` builds for this Mac's architecture, installs the app to `/Applications/SoundPin.app`, and opens it. Universal builds come from `tools/make-dmg.sh`.
+`install.sh` builds for this Mac's architecture, verifies a staged copy, backs up the existing app under `~/Library/Application Support/SoundPin/Backups/`, then installs to `/Applications/SoundPin.app` and opens it. A copy, verification, or launch-command failure preserves or restores the previous application. Universal builds come from `tools/make-dmg.sh`.
 
 ## Usage
 
@@ -93,6 +93,8 @@ SoundPin runs in the menu bar as a speaker icon:
 | Sound Settings… | Opens macOS Sound settings |
 
 When automatic switching is paused, pending routing retries are cancelled and an "Auto-Switch Paused" indicator appears in the header. Click it to resume.
+
+Queued device writes are cancelled when superseded. A write already inside CoreAudio cannot be interrupted; a newer selection is applied after it. If repeated default-device changes trigger conflict protection, the affected side is held for up to 60 seconds and the panel shows "Switching on Hold". Click that indicator to retry immediately. Open at Login reports registration errors and offers a System Settings action when approval is needed.
 
 Device inventory failures retain the previous display and suspend automatic selection, with at most two scheduled read retries. Manual selection is promoted only after the system default-device read-back matches. Failed switches receive at most two additional attempts, followed by a retry action. System read-back does not verify audible playback.
 
@@ -146,6 +148,10 @@ The repository includes helper scripts:
 - `tools/check-listening-modes.sh`: Checks supported modes, unknown values, invalid-device guards, and partial listener registration, recovery and cleanup using simulated hardware. No real device writes.
 - `tools/check-listening-mode-requests.sh`: Checks pending requests, timeout, retry, disconnect cancellation, late notifications and bounded recovery using in-memory services and a virtual clock. It does not link the real listening-mode service.
 - `tools/check-settings.sh`: Checks how devices are remembered and marked "never select automatically", using in-memory preferences without writing a preferences domain.
+- `tools/check-audio-device-service.sh`: Runs production audio-service logic against simulated HAL properties, covering listener recovery, channel mute controls and listening-mode detection after renaming.
+- `tools/check-panel-layout.sh`: Checks constrained panel heights in both languages, drag insertion boundaries and the macOS 13 keyboard bridge without showing a window or changing audio.
+- `tools/check-login-item.sh`: Checks login-item approval and error feedback with an injected service; never changes system login settings.
+- `tools/check-install.sh`: Checks staging, backup and rollback for copy, verification and launch-command failures in temporary folders; never changes the installed application.
 - `tools/check-events.sh`: Checks that a burst of device notifications is handled once, using test devices only this process sees.
 - `tools/check-listening-mode-accessibility.sh`: verifies default mode actions, pending state, timeout and retry through Accessibility APIs in an isolated window with simulated devices; requires Accessibility permission.
 - `tools/check-panel-acceptance.sh [--reduce-motion] [--record]`: checks expansion, rapid reversal and collapse (the panel window keeps its frame), accessibility actions and simulated requests in the real menu-bar panel. Requires Accessibility permission, plus Screen Recording for recording. Keep the desktop idle: dismissed menus or moving status items fail the check. This is an interactive diagnostic, not an unattended CI gate.

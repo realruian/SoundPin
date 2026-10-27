@@ -13,13 +13,13 @@ final class SoundPanelController: NSObject {
     private let hostingView: PanelHostingView
     private let content: AnyView
     private let symbol: () -> (name: String, value: Double?)
-    private let accessibilityLabel: String
+    private let accessibilityLabel: () -> String
     private var cancellables: Set<AnyCancellable> = []
     private var monitors: [Any] = []
     private var observers: [NSObjectProtocol] = []
 
     init(content: some View, changes: AnyPublisher<Void, Never>,
-         accessibilityLabel: String, symbol: @escaping () -> (name: String, value: Double?)) {
+         accessibilityLabel: @autoclosure @escaping () -> String, symbol: @escaping () -> (name: String, value: Double?)) {
         self.symbol = symbol
         self.accessibilityLabel = accessibilityLabel
         self.content = AnyView(content)
@@ -28,8 +28,6 @@ final class SoundPanelController: NSObject {
         // The window keeps its size; the panel grows and shrinks inside it.
         hostingView.sizingOptions = []
         window.contentView = hostingView
-        // VoiceOver names the panel by its window title, as it reads "Control Center" for the Sound menu.
-        window.title = accessibilityLabel
         window.onCancel = { [weak self] in self?.close() }
 
         if #available(macOS 27.0, *) {
@@ -42,7 +40,6 @@ final class SoundPanelController: NSObject {
             // Opens on mouse down, like the system's menu bar items
             button.sendAction(on: [.leftMouseDown, .rightMouseDown])
         }
-        statusItem.button?.setAccessibilityLabel(accessibilityLabel)
         updateButton()
         // objectWillChange fires before the change; read the new state on the next turn.
         changes.receive(on: RunLoop.main).sink { [weak self] in self?.updateButton() }.store(in: &cancellables)
@@ -56,14 +53,23 @@ final class SoundPanelController: NSObject {
     }
 
     private var shownSymbol: (name: String, value: Double?)?
+    private var shownAccessibilityLabel: String?
 
     private func updateButton() {
         guard let button = statusItem.button else { return }
+        let label = accessibilityLabel()
+        if shownAccessibilityLabel != label {
+            shownAccessibilityLabel = label
+            // VoiceOver names the panel by this title. Only a language change needs a write;
+            // redundant status-item updates can end an expanded-interface session on macOS 27.
+            window.title = label
+            button.setAccessibilityLabel(label)
+        }
         let (name, value) = symbol()
         if let shown = shownSymbol, shown.name == name, shown.value == value { return }
         shownSymbol = (name, value)
-        let image = value.map { NSImage(systemSymbolName: name, variableValue: $0, accessibilityDescription: accessibilityLabel) }
-            ?? NSImage(systemSymbolName: name, accessibilityDescription: accessibilityLabel)
+        let image = value.map { NSImage(systemSymbolName: name, variableValue: $0, accessibilityDescription: label) }
+            ?? NSImage(systemSymbolName: name, accessibilityDescription: label)
         image?.isTemplate = true
         button.image = image
     }
@@ -87,7 +93,8 @@ final class SoundPanelController: NSObject {
         let layout = PanelPlacement.layout(itemFrame: item, itemWindowFrame: buttonWindow.frame,
                                            screenFrame: screen.frame, visibleFrame: screen.visibleFrame)
         let hostingView = hostingView
-        hostingView.rootView = AnyView(SoundPanelRoot(content: content, topInset: layout.topInset) {
+        hostingView.rootView = AnyView(SoundPanelRoot(content: content, topInset: layout.topInset,
+                                                   maximumPanelHeight: layout.maximumPanelHeight) {
             hostingView.panelFrame = $0
         })
         window.setFrame(layout.windowFrame, display: true)
@@ -177,13 +184,15 @@ extension SoundPanelController: @preconcurrency NSStatusItemExpandedInterfaceDel
 }
 
 /// Places the panel content inside the larger transparent window.
-private struct SoundPanelRoot<Content: View>: View {
+struct SoundPanelRoot<Content: View>: View {
     let content: Content
     let topInset: CGFloat
+    let maximumPanelHeight: CGFloat
     let onPanelFrame: (CGRect) -> Void
 
     var body: some View {
         content
+            .environment(\.maximumPanelHeight, maximumPanelHeight)
             .panelSurface()
             .background(GeometryReader { proxy in
                 // Reported directly: a preference change was not delivered to the hosting view.
@@ -195,6 +204,23 @@ private struct SoundPanelRoot<Content: View>: View {
             .padding(.horizontal, PanelPlacement.sideInset)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
+}
+
+private struct MaximumPanelHeightKey: EnvironmentKey {
+    static var defaultValue: CGFloat? = nil
+}
+
+extension EnvironmentValues {
+    var maximumPanelHeight: CGFloat? {
+        get { self[MaximumPanelHeightKey.self] }
+        set { self[MaximumPanelHeightKey.self] = newValue }
+    }
+}
+
+/// Sum only the fixed portions; measuring the list too would create a sizing feedback loop.
+struct PanelFixedContentHeightKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value += nextValue() }
 }
 
 extension View {
