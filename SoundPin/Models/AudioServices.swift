@@ -82,6 +82,57 @@ extension UserDefaults: PreferenceStore {}
     func write(_ work: @escaping () -> AudioObjectID?, then done: @escaping @MainActor (AudioObjectID?) -> Void)
 }
 
+/// Shared by the main actor and the serial writer. Cancelling a queued write prevents
+/// it from starting; an executing HAL call cannot be interrupted and remains tracked
+/// until its read-back finishes so newer intent can be applied after it.
+final class AudioWriteToken: @unchecked Sendable {
+    private let lock = NSLock()
+    private var cancelled = false
+    private var started = false
+    private var executing = false
+    private var finished = false
+
+    func begin() -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        guard !cancelled, !executing, !finished else { return false }
+        started = true
+        executing = true
+        return true
+    }
+
+    func cancel() {
+        lock.lock()
+        cancelled = true
+        lock.unlock()
+    }
+
+    func finish() {
+        lock.lock()
+        finished = true
+        executing = false
+        lock.unlock()
+    }
+
+    var isCancelled: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return cancelled
+    }
+
+    var hasStarted: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return started
+    }
+
+    var canAffectRoute: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return !finished && (executing || !cancelled)
+    }
+}
+
 /// One serial queue, so that writes land in the order they were asked for.
 @MainActor final class BackgroundAudioWriter: AudioWriting {
     private let queue = DispatchQueue(label: "io.github.realruian.SoundPin.route-writes", qos: .userInitiated)

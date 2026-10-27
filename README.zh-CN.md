@@ -65,7 +65,7 @@ SoundPin（中文名“定音”）为扬声器、耳机和麦克风分别维护
 
 ### 从源码构建
 
-需要 Xcode 26 或更高版本（应用图标为 Icon Composer 格式，仅安装命令行工具无法构建）：
+需要 Xcode 27 或更高版本及 macOS 27 SDK（菜单面板引用了 SDK 27 的新类型，应用图标为 Icon Composer 格式，仅安装命令行工具无法构建）。最低运行版本仍为 macOS 13：
 
 ```bash
 git clone https://github.com/realruian/SoundPin.git
@@ -73,7 +73,7 @@ cd SoundPin
 ./install.sh
 ```
 
-`install.sh` 会编译适用于本机架构的版本，安装至 `/Applications/SoundPin.app` 并启动。Universal 通用版本由 `tools/make-dmg.sh` 构建。
+`install.sh` 会编译适用于本机架构的版本，先复制并验证新版，再把旧版备份到 `~/Library/Application Support/SoundPin/Backups/`，随后安装至 `/Applications/SoundPin.app` 并启动。复制、验证或启动命令失败时，会保留或恢复原应用。Universal 通用版本由 `tools/make-dmg.sh` 构建。
 
 ## 使用说明
 
@@ -92,6 +92,8 @@ cd SoundPin
 | 声音设置… | 打开系统声音设置 |
 
 关闭“自动切换设备”后，应用停止干预，并取消尚未完成的切换重试。面板顶部会显示“自动切换已暂停”，点击即可恢复。
+
+较新的选择会取消尚未执行的旧切换请求。已经进入 CoreAudio 的写入无法中断，新选择会排在它之后生效。检测到设备被反复切换时，对应输入或输出会暂缓自动切换，最长 60 秒；面板显示“切换暂缓”，点击可立即重试。开机启动操作失败会显示原因，需要系统批准时会提供前往系统设置的入口。
 
 设备列表暂时读取失败时，保留原列表并暂停自动选择，最多安排两次读取重试。手动选择在系统默认设备回读确认后才置顶；切换失败最多追加两次尝试，随后显示重试入口。系统默认设备回读不代表声音播放或耳机听感已经验证。
 
@@ -145,6 +147,10 @@ defaults delete app.audioprioritybar
 - `tools/check-listening-modes.sh`：检查听音模式支持位、未知值、无效设备保护，以及模拟硬件上的部分监听注册失败、恢复和清理；不向真实设备写入模式。
 - `tools/check-listening-mode-requests.sh`：通过内存服务与虚拟时钟检查待完成请求、超时、重试、断连取消、迟到通知和有限恢复；不链接真实听音模式服务。
 - `tools/check-settings.sh`：检查设备记忆与“永不自动选用”的存取逻辑，使用内存偏好存储，不写入任何偏好设置域。
+- `tools/check-audio-device-service.sh`：使用模拟 HAL 属性验证正式音频服务中的监听恢复、通道静音控制和设备改名后的听音模式检测。
+- `tools/check-panel-layout.sh`：检查中英文面板的小屏高度适配、拖拽插入位置和 macOS 13 键盘桥接；不显示窗口、不改变音频。
+- `tools/check-login-item.sh`：通过注入服务检查开机启动的授权提示和错误反馈，不改变系统登录项。
+- `tools/check-install.sh`：在临时目录中验证安装暂存、备份，以及复制、验证和启动命令失败后的恢复；不改动已安装应用。
 - `tools/check-events.sh`：检查连续的设备变化通知是否被合并处理，使用仅本进程可见的测试设备。
 - `tools/check-listening-mode-accessibility.sh`：在隔离窗口中通过辅助功能 API 检查听音模式默认操作、等待状态、超时与重试；仅使用模拟设备，需要辅助功能权限。
 - `tools/check-panel-acceptance.sh [--reduce-motion] [--record]`：在真实菜单栏面板中检查展开、快速反向和收起（窗口位置与大小保持不变）、辅助功能操作和模拟请求；需要辅助功能权限，录制还需要屏幕录制权限。测试时需保持桌面空闲，菜单被关闭或其他菜单栏项目移动会使检查失败；不作为无人值守 CI 检查。

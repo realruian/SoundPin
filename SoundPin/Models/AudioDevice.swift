@@ -26,11 +26,14 @@ struct AudioDevice: Identifiable, Equatable, Hashable {
     var isConnected: Bool = true
     /// Captured with the inventory; models and previews never query HAL.
     var transportType: UInt32? = nil
+    /// HAL capability survives user-renaming; false also keeps ordinary Bluetooth
+    /// speakers out of listening-mode recovery. Existing sample devices use the name fallback.
+    var listeningModeCapable: Bool = false
 
     /// Candidate filtering is local; the service still validates UID and HAL capability.
     var isListeningModeCandidate: Bool {
         isConnected && id != 0 && type == .output
-            && name.localizedCaseInsensitiveContains("AirPods")
+            && (listeningModeCapable || name.localizedCaseInsensitiveContains("AirPods"))
             && transportType == kAudioDeviceTransportTypeBluetooth
     }
 

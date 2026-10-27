@@ -88,6 +88,31 @@ import CoreAudio
             check(!service.request(.transparency, for: pods) && hardware.writes.count == 1,
                   "identity is checked again immediately before mode write")
         }
+        do {
+            let hardware = SimulatedModeHardware()
+            hardware.identities[pods.id] = pods.uid
+            let service = ListeningModeService(hardware: hardware)
+            let renamed = AudioDevice(id: pods.id, uid: pods.uid, name: "我的耳机", type: .output,
+                                      transportType: kAudioDeviceTransportTypeBluetooth,
+                                      listeningModeCapable: true)
+            check(service.state(for: renamed)?.supported.count == 3,
+                  "confirmed HAL capability keeps modes available after a user rename")
+            service.observe([renamed])
+            check(hardware.active.count == 2 && service.request(.transparency, for: renamed),
+                  "renamed supported device retains observation and guarded requests")
+            let ordinary = AudioDevice(id: 102, uid: "ordinary", name: "Bluetooth Speaker", type: .output,
+                                       transportType: kAudioDeviceTransportTypeBluetooth)
+            hardware.identities[ordinary.id] = ordinary.uid
+            let writes = hardware.writes.count
+            service.observe([renamed, ordinary])
+            check(service.state(for: ordinary) == nil && !service.request(.transparency, for: ordinary)
+                  && hardware.writes.count == writes && hardware.active.count == 2 && !service.needsObservationRecovery,
+                  "ordinary Bluetooth devices neither write nor schedule observation recovery")
+            hardware.identities[renamed.id] = "reused-id"
+            check(service.state(for: renamed) == nil && !service.request(.transparency, for: renamed)
+                  && hardware.writes.count == writes,
+                  "renamed capability does not bypass live endpoint identity checks")
+        }
         print("\(count) checks passed. No real device writes.")
     }
 }

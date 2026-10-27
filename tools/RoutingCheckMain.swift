@@ -192,6 +192,18 @@ import CoreAudio
             check(audio.defaults[.output] == a.id, "ignoring the hand-picked device restores eligible priority")
         }
         do {
+            let (m, audio, _, _) = fixture(current: a.id, paused: false)
+            m.setNeverUse(b, neverUse: true)
+            m.selectOutputDevice(b, in: .speaker)
+            m.toggleEditMode()
+            m.hideDevice(b, category: .speaker)
+            check(audio.defaults[.output] == a.id && m.isEditMode,
+                  "ignoring a hand-picked never-auto-select device takes effect while editing")
+            await notify(audio)
+            m.toggleEditMode()
+            check(audio.defaults[.output] == a.id, "leaving the editor does not revive the ignored hand pick")
+        }
+        do {
             let (m, audio, _, clock) = fixture()
             audio.rejectedRows = [a.rowID]
             m.setCustomMode(false)
@@ -263,6 +275,43 @@ import CoreAudio
         }
         do {
             let (m, audio, _, clock) = fixture(current: a.id, paused: false)
+            for _ in 0..<5 {
+                audio.defaults[.output] = c.id
+                await notify(audio)
+            }
+            check(m.heldBackTypes == [.output], "conflict pause publishes the affected side")
+            clock.advance(by: 5)
+            m.selectOutputDevice(b, in: .speaker)
+            let writesAfterManualPick = audio.writes.count
+            for _ in 0..<3 {
+                audio.defaults[.output] = c.id
+                await notify(audio)
+            }
+            clock.advance(by: 5.1) // Expiry callbacks from before the manual pick.
+            for _ in 0..<4 {
+                audio.defaults[.output] = c.id
+                await notify(audio)
+            }
+            check(audio.writes.count - writesAfterManualPick == 4 && m.heldBackTypes == [.output],
+                  "old expiry callbacks cannot subtract corrections from the new window")
+            m.setCustomMode(true)
+            let writesBeforeResume = audio.writes.count
+            m.resumeRoutingAfterConflict()
+            check(m.heldBackTypes.isEmpty && m.isCustomMode && audio.writes.count == writesBeforeResume,
+                  "resuming conflict recovery never overrides a user pause")
+        }
+        do {
+            let (m, audio, _, _) = fixture(current: a.id, paused: false)
+            for _ in 0..<5 {
+                audio.defaults[.output] = c.id
+                await notify(audio)
+            }
+            m.resumeRoutingAfterConflict()
+            check(m.heldBackTypes.isEmpty && audio.defaults[.output] == a.id,
+                  "explicit conflict recovery retries priority routing")
+        }
+        do {
+            let (m, audio, _, clock) = fixture(current: a.id, paused: false)
             for _ in 0..<10 {
                 audio.defaults[.output] = c.id
                 await notify(audio)
@@ -294,8 +343,121 @@ import CoreAudio
             let (m, audio, _, _) = fixture(paused: false, writer: writer)
             m.selectOutputDevice(b, in: .speaker)
             writer.flush()
+            check(audio.writes.map(\.uid) == ["b"] && audio.defaults[.output] == b.id && m.currentOutputId == b.id,
+                  "a newer manual pick cancels the obsolete queued write")
+        }
+        do {
+            let writer = DeferredAudioWriter()
+            let (m, audio, _, _) = fixture(paused: false, writer: writer)
+            m.setCustomMode(true)
+            writer.flush()
+            check(audio.writes.isEmpty && audio.defaults[.output] == c.id && m.pendingRouteRows.isEmpty,
+                  "pausing cancels a default write before it starts")
+        }
+        do {
+            let writer = DeferredAudioWriter()
+            let (m, audio, _, _) = fixture(writer: writer)
+            m.selectOutputDevice(a, in: .speaker)
+            m.selectOutputDevice(c, in: .speaker)
+            writer.flush()
+            check(audio.writes.isEmpty && audio.defaults[.output] == c.id && m.currentOutputId == c.id,
+                  "selecting the current device cancels an older queued manual pick")
+        }
+        do {
+            let writer = DeferredAudioWriter()
+            let (m, audio, _, _) = fixture(writer: writer)
+            audio.beforeWrite = { device in
+                guard device.uid == a.uid else { return }
+                audio.beforeWrite = nil
+                m.selectOutputDevice(c, in: .speaker)
+                m.retryDeviceRead() // Still C while A's already-started HAL call waits.
+            }
+            m.selectOutputDevice(a, in: .speaker)
+            writer.flush()
+            check(m.pendingRouteRows == [c.rowID] && audio.defaults[.output] == a.id,
+                  "a newer pick of the current route waits for an already-started write")
+            writer.flush()
+            check(audio.writes.map(\.uid) == ["a", "c"] && m.currentOutputId == c.id && m.pendingRouteRows.isEmpty,
+                  "latest manual intent wins after an uninterruptible HAL write")
+        }
+        do {
+            let writer = DeferredAudioWriter()
+            let (m, audio, prefs, _) = fixture(paused: false, writer: writer)
+            audio.beforeWrite = { _ in
+                audio.beforeWrite = nil
+                m.setCustomMode(true)
+            }
+            writer.flush()
+            writer.flush()
+            check(m.isCustomMode && audio.defaults[.output] == c.id && audio.writes.map(\.uid) == ["a", "c"],
+                  "a pause restores its route after an already-started obsolete HAL write")
+            check(prefs.array(forKey: "speakerPriorities") as? [String] == ["a", "b", "c"],
+                  "pause compensation never promotes a device")
+        }
+        do {
+            let writer = DeferredAudioWriter()
+            let (m, audio, _, _) = fixture(paused: false, writer: writer)
+            audio.beforeWrite = { _ in
+                audio.beforeWrite = nil
+                m.setCustomMode(true)
+                m.selectOutputDevice(b, in: .speaker)
+            }
+            writer.flush()
+            writer.flush()
             check(audio.writes.map(\.uid) == ["a", "b"] && audio.defaults[.output] == b.id && m.currentOutputId == b.id,
-                  "a manual pick made during a write lands last")
+                  "a newer manual pick cancels the pending pause compensation")
+        }
+        do {
+            let writer = DeferredAudioWriter()
+            let (m, audio, _, _) = fixture(paused: false, writer: writer)
+            audio.beforeWrite = { _ in
+                audio.beforeWrite = nil
+                m.setCustomMode(true)
+            }
+            writer.flush()
+            audio.defaults[.output] = b.id // A third party made its own newer choice.
+            writer.flush()
+            check(audio.writes.map(\.uid) == ["a"] && audio.defaults[.output] == b.id && m.pendingRouteRows.isEmpty,
+                  "pause compensation does not overwrite a different newer system route")
+        }
+        do {
+            let writer = DeferredAudioWriter()
+            let (m, audio, _, clock) = fixture(paused: false, writer: writer)
+            audio.beforeWrite = { _ in
+                audio.beforeWrite = nil
+                m.setCustomMode(true)
+            }
+            writer.flush()
+            audio.devices = [device(a.id, "replacement"), b, c]
+            writer.flush()
+            clock.advance(by: 10)
+            check(audio.writes.map(\.uid) == ["a"] && m.pendingRouteRows.isEmpty && m.routingFailure == nil,
+                  "pause compensation validates the obsolete endpoint identity before restoring")
+        }
+        for action in 0..<3 { // Pick current, pause only, or pause followed by another pick.
+            let audio = BlockingRouteService(devices: [a, b, c], current: c.id, blockedUID: a.uid)
+            let prefs = MemoryPreferences()
+            prefs.set(true, forKey: "customMode")
+            prefs.set(["a", "b", "c"], forKey: "speakerPriorities")
+            let m = AudioManager(deviceService: audio, listeningModeService: SimulatedListeningModes(),
+                                 priorityManager: PriorityManager(defaults: prefs), scheduler: TestAudioScheduler(),
+                                 writer: BackgroundAudioWriter())
+            m.selectOutputDevice(a, in: .speaker)
+            for _ in 0..<300 where !audio.writeHasStarted {
+                try? await Task.sleep(nanoseconds: 10_000_000)
+            }
+            check(audio.writeHasStarted, "production background writer enters the simulated HAL boundary")
+            if action > 0 { m.setCustomMode(true) }
+            let latest = action == 2 ? b : c
+            if action != 1 { m.selectOutputDevice(latest, in: .speaker) }
+            audio.releaseWrite()
+            for _ in 0..<300 where !m.pendingRouteRows.isEmpty {
+                try? await Task.sleep(nanoseconds: 10_000_000)
+            }
+            check(audio.writes == [a.uid, latest.uid] && m.currentOutputId == latest.id && m.pendingRouteRows.isEmpty,
+                  ["real background serialization restores a newer pick of the current device",
+                   "real background serialization restores the route present at a user pause",
+                   "real background serialization preserves newer manual intent after a pause"][action])
         }
         print("\(count) routing checks passed. No real audio service or persistent settings used.")
     }

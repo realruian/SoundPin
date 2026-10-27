@@ -16,6 +16,15 @@ enum PanelPlacement {
         var windowFrame: CGRect
         /// Space between the window's top (the menu bar's bottom) and the panel: 1 pt (measured on 2x displays).
         var topInset: CGFloat
+
+        /// Keep the panel and the glass's lower shadow inside the transparent window.
+        var maximumPanelHeight: CGFloat { max(0, windowFrame.height - topInset - sideInset) }
+    }
+
+    /// The list yields space to the measured header/footer on smaller screens.
+    static func listHeight(contentHeight: CGFloat, fixedContentHeight: CGFloat, maximumPanelHeight: CGFloat?) -> CGFloat {
+        let available = maximumPanelHeight.map { max(0, $0 - fixedContentHeight) } ?? 460
+        return max(0, min(contentHeight, 460, available))
     }
 
     /// Like the Sound menu (measured): the panel's left edge meets the left edge of the item's

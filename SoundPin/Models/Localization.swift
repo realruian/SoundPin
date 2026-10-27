@@ -61,6 +61,13 @@ enum L10n {
     }
     static var autoSwitchPaused: String { pick("Auto-Switch Paused", "自动切换已暂停") }
     static var resumeAutoSwitchHelp: String { pick("Click to resume automatic switching", "点击恢复自动切换") }
+    static var routingConflictPaused: String { pick("Switching on Hold", "切换暂缓") }
+    static func routingConflictHelp(input: Bool, output: Bool) -> String {
+        let side = input && output ? pick("input and output", "输入和输出")
+            : input ? pick("input", "输入") : pick("output", "输出")
+        return pick("Repeated \(side) changes detected. Automatic switching is on hold for up to 60 seconds. Click to retry now.",
+                    "检测到\(side)设备被反复切换，自动切换暂缓，最长 60 秒。点击可立即重试。")
+    }
 
     // Battery values are the latest report from macOS; the case can update separately.
     static var batteryDevice: String { pick("Battery", "电量") }
@@ -73,6 +80,11 @@ enum L10n {
     // Main menu
     static var autoSwitch: String { pick("Switch Devices Automatically", "自动切换设备") }
     static var openAtLogin: String { pick("Open at Login", "开机启动") }
+    static var loginApprovalRequired: String { pick("Allow in System Settings…", "前往系统设置允许启动…") }
+    static var loginApprovalMessage: String { pick("Allow SoundPin in System Settings → General → Login Items & Extensions to enable Open at Login.", "请在系统设置 → 通用 → 登录项与扩展中允许定音启动，然后返回查看状态。") }
+    static var loginChangeFailed: String { pick("Couldn’t Update Open at Login", "无法更新开机启动设置") }
+    static var loginChangeUnconfirmed: String { pick("The system hasn’t confirmed the change. Check Login Items in System Settings and try again.", "系统尚未确认此更改，请检查系统设置中的登录项后重试。") }
+    static var openSystemSettings: String { pick("Open System Settings", "打开系统设置") }
     static var editDeviceList: String { pick("Edit Device List", "编辑设备列表") }
     static var ignoredDevices: String { pick("Ignored Devices", "已忽略的设备") }
     static var language: String { pick("Language", "语言") }

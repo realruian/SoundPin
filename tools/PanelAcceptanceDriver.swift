@@ -160,6 +160,27 @@ let stable = samples.allSatisfy { abs(($0["top"] as! Double) - initial.minY) <= 
 check(stable, "panel window keeps its frame throughout expansion and reversal")
 video?.waitUntilExit()
 if let video { check(video.terminationStatus == 0 && FileManager.default.fileExists(atPath: output + "/motion.mov"), "test panel recording saved") }
+// Real pointer events must reach the simulated volume slider inside the production panel.
+// This catches stale panel hit-test geometry that would close the menu on an inside click.
+func volumeSlider() -> AXUIElement? {
+    window().flatMap { find($0) { string(attr($0, "AXRole")) == "AXSlider" } }
+}
+if let slider = volumeSlider(), let sliderRect = rect(slider) {
+    let before = attr(slider, "AXValue") as? NSNumber
+    let start = CGPoint(x: sliderRect.minX + sliderRect.width * 0.6, y: sliderRect.midY)
+    let end = CGPoint(x: sliderRect.minX + sliderRect.width * 0.35, y: sliderRect.midY)
+    CGEvent(mouseEventSource: nil, mouseType: .leftMouseDown, mouseCursorPosition: start, mouseButton: .left)?.post(tap: .cghidEventTap)
+    usleep(50_000)
+    CGEvent(mouseEventSource: nil, mouseType: .leftMouseDragged, mouseCursorPosition: end, mouseButton: .left)?.post(tap: .cghidEventTap)
+    usleep(50_000)
+    CGEvent(mouseEventSource: nil, mouseType: .leftMouseUp, mouseCursorPosition: end, mouseButton: .left)?.post(tap: .cghidEventTap)
+    usleep(250_000)
+    let after = volumeSlider().flatMap { attr($0, "AXValue") as? NSNumber }
+    check(window() != nil, "inside slider drag keeps the panel open")
+    check(before != nil && after != nil && before != after, "pointer drag updates simulated output volume")
+} else {
+    check(false, "production slider is available for pointer interaction")
+}
 // Focused window regression: Escape closes, and reopening creates exactly one panel window.
 if args.contains("--chrome-only") {
     func panelCount() -> Int {

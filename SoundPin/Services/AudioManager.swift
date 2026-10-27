@@ -89,6 +89,13 @@ class AudioManager: ObservableObject {
     private var inventoryRetryCount = 0
     private let retryDelays: [TimeInterval] = [0.3, 1.0]
     private var pendingRoutes: [AudioDeviceType: RouteRequest] = [:]
+    private struct OutstandingWrite {
+        let device: AudioDevice
+        let token: AudioWriteToken
+        let sequence: Int
+    }
+    private var outstandingWrites: [AudioDeviceType: [UUID: OutstandingWrite]] = [:]
+    private var writeSequence = 0
     private var failedRows: [AudioDeviceType: Set<String>] = [:]
     /// True while one pass of work runs on an inventory read at its start, so that the
     /// routes it requests do not read every device again
@@ -103,9 +110,11 @@ class AudioManager: ObservableObject {
     private let correctionPause: TimeInterval = 60
     private var recentCorrections: [AudioDeviceType: Int] = [:]
     private var correctionPauses: [AudioDeviceType: ScheduledAudioAction] = [:]
+    private var correctionGenerations: [AudioDeviceType: Int] = [:]
+    @Published private(set) var heldBackTypes: Set<AudioDeviceType> = []
 
     /// Whether automatic picks of this side are held back after a tug of war
-    func isHoldingBack(_ type: AudioDeviceType) -> Bool { correctionPauses[type] != nil }
+    func isHoldingBack(_ type: AudioDeviceType) -> Bool { heldBackTypes.contains(type) }
 
     struct RoutingFailure: Identifiable {
         let id = UUID()
@@ -120,13 +129,19 @@ class AudioManager: ObservableObject {
         let manual: Bool
         let category: OutputCategory?
         let promote: Bool
+        /// A pause may need to undo a HAL write already in progress, but only while
+        /// that obsolete endpoint remains in use. Never overwrite a third-party pick.
+        let restoreOnlyFrom: AudioDevice?
         var attempts = 0
         var isWriting = false
+        var writeToken: AudioWriteToken?
         /// Retries of one request are one correction, not several
         var isCountedAsCorrection = false
         var scheduled: ScheduledAudioAction?
-        init(device: AudioDevice, manual: Bool, category: OutputCategory?, promote: Bool) {
+        init(device: AudioDevice, manual: Bool, category: OutputCategory?, promote: Bool,
+             restoreOnlyFrom: AudioDevice? = nil) {
             self.device = device; self.manual = manual; self.category = category; self.promote = promote
+            self.restoreOnlyFrom = restoreOnlyFrom
         }
     }
 
@@ -519,6 +534,22 @@ class AudioManager: ObservableObject {
     private var previousConnectedRowIDs: Set<String> = []
     
     func setCustomMode(_ enabled: Bool) {
+        // Capture the route at the user's pause before cancelling. Queued work is
+        // suppressed; only a HAL call that has already begun may need compensation.
+        var routesToPreserve: [(AudioDevice, AudioDevice)] = []
+        if enabled {
+            for (type, writes) in outstandingWrites {
+                guard let actual = deviceService.getCurrentDefaultDevice(type: type),
+                      let current = connectedDevices.first(where: { $0.type == type && $0.id == actual }) else { continue }
+                for write in writes.values { write.token.cancel() }
+                // Callbacks for finished writes may still be waiting on the main
+                // actor. Only the last started write can determine the final route.
+                if let latest = writes.values.filter({ $0.token.hasStarted }).max(by: { $0.sequence < $1.sequence }),
+                   latest.device.id != current.id {
+                    routesToPreserve.append((current, latest.device))
+                }
+            }
+        }
         for type in Array(pendingRoutes.keys) { cancelRoute(type) }
         failedRows = [:]
         routingFailure = nil
@@ -526,6 +557,13 @@ class AudioManager: ObservableObject {
         isCustomMode = enabled
         priorityManager.isCustomMode = enabled
         needsOutputReconciliation = !enabled
+        if enabled {
+            for (current, obsolete) in routesToPreserve {
+                requestRoute(current, manual: true,
+                             category: current.type == .output ? priorityManager.getCategory(for: current) : nil,
+                             restoreOnlyFrom: obsolete)
+            }
+        }
         if !enabled {
             // Always refresh before resuming, including after a missed event.
             guard refreshDevices() else { return }
@@ -725,7 +763,7 @@ class AudioManager: ObservableObject {
         let listed = type == .input ? inputDevices : speakerDevices + headphoneDevices
         let currentId = type == .input ? currentInputId : currentOutputId
         if let device = listed.first(where: { $0.uid == uid && $0.isConnected }),
-           device.id == currentId, priorityManager.isNeverUse(device) {
+           device.id == currentId, priorityManager.isNeverUse(device), !isDeviceIgnored(device) {
             return true
         }
         handPickedUIDs[type] = nil
@@ -760,11 +798,19 @@ class AudioManager: ObservableObject {
     }
 
     private func cancelRoute(_ type: AudioDeviceType) {
-        pendingRoutes.removeValue(forKey: type)?.scheduled?.cancel()
+        if let request = pendingRoutes.removeValue(forKey: type) {
+            request.scheduled?.cancel()
+            request.writeToken?.cancel()
+        }
         pendingRouteRows = Set(pendingRoutes.values.map { $0.device.rowID })
     }
 
-    private func requestRoute(_ device: AudioDevice, manual: Bool, category: OutputCategory?) {
+    private func hasOutstandingWrite(_ type: AudioDeviceType) -> Bool {
+        outstandingWrites[type]?.values.contains { $0.token.canAffectRoute } == true
+    }
+
+    private func requestRoute(_ device: AudioDevice, manual: Bool, category: OutputCategory?,
+                              restoreOnlyFrom: AudioDevice? = nil) {
         guard device.isConnected, manual || (!isCustomMode && !isDeviceReadUnavailable) else { return }
         if !manual {
             guard pendingRoutes[device.type] == nil, !(failedRows[device.type] ?? []).contains(device.rowID) else { return }
@@ -773,10 +819,11 @@ class AudioManager: ObservableObject {
             failedRows[device.type] = []
             routingFailure = nil
             // A device picked by hand ends a hold-back: the user has settled the tug of war
-            endHoldingBack(device.type)
+            if restoreOnlyFrom == nil { endHoldingBack(device.type) }
         }
         let request = RouteRequest(device: device, manual: manual, category: category,
-                                   promote: manual && !isCustomMode)
+                                   promote: manual && !isCustomMode && restoreOnlyFrom == nil,
+                                   restoreOnlyFrom: restoreOnlyFrom)
         AudioLog.routing.notice("""
             route request: \(device.type.rawValue, privacy: .public) -> \(device.name, privacy: .public) \
             \(manual ? "manual" : "automatic", privacy: .public) mode=\(self.currentMode.rawValue, privacy: .public)
@@ -805,7 +852,7 @@ class AudioManager: ObservableObject {
             scheduleRouteRetry(request)
             return
         }
-        if actual == device.id {
+        if actual == device.id && !hasOutstandingWrite(type) {
             completeRoute(request, device: device, changed: false)
             return
         }
@@ -814,10 +861,28 @@ class AudioManager: ObservableObject {
             request.isCountedAsCorrection = true
         }
         request.isWriting = true
+        let token = AudioWriteToken()
+        let writeID = UUID()
+        request.writeToken = token
+        writeSequence += 1
+        outstandingWrites[type, default: [:]][writeID] = OutstandingWrite(device: device, token: token, sequence: writeSequence)
         let service = deviceService
         let attempt = request.attempts
         let previous = logName(actual, type)
+        let restoreOnlyFrom = request.restoreOnlyFrom
         writer.write({
+            guard token.begin() else { return nil }
+            defer { token.finish() }
+            guard let current = service.getCurrentDefaultDevice(type: type) else { return nil }
+            if current == device.id { return current }
+            if let obsolete = restoreOnlyFrom {
+                guard current == obsolete.id else { return current }
+                guard case .available(let devices) = service.readInventory(),
+                      devices.contains(where: { $0.rowID == obsolete.rowID && $0.id == obsolete.id }) else {
+                    return nil
+                }
+            }
+            guard !token.isCancelled else { return nil }
             let accepted = service.setDefaultDevice(device)
             let after = service.getCurrentDefaultDevice(type: type)
             AudioLog.routing.notice("""
@@ -827,9 +892,21 @@ class AudioManager: ObservableObject {
             return after
         }, then: { [weak self] after in
             request.isWriting = false
-            guard let self, self.pendingRoutes[type]?.id == request.id else { return }
+            request.writeToken = nil
+            guard let self else { return }
+            self.outstandingWrites[type]?[writeID] = nil
+            guard self.pendingRoutes[type]?.id == request.id else { return }
             if after == device.id {
                 self.completeRoute(request, device: device, changed: true)
+            } else if let obsolete = request.restoreOnlyFrom, after != obsolete.id {
+                // Another choice superseded the paused route. Keep it, with no
+                // retries or priority changes from the compensation request.
+                self.cancelRoute(type)
+                if type == .input {
+                    self.currentInputId = service.getCurrentDefaultDevice(type: .input)
+                }
+                self.refreshVolume()
+                self.refreshMuteStatus()
             } else {
                 self.scheduleRouteRetry(request)
             }
@@ -849,16 +926,20 @@ class AudioManager: ObservableObject {
             correctionPauses[type] = scheduler.schedule(after: correctionPause) { [weak self] in
                 guard let self else { return }
                 self.correctionPauses[type] = nil
-                self.recentCorrections[type] = 0
+                self.heldBackTypes.remove(type)
+                self.resetCorrectionWindow(type)
                 AudioLog.routing.notice("hold back \(type.rawValue, privacy: .public) ended")
                 guard self.refreshDevices() else { return }
                 self.onFreshInventory { self.pickAgain(type) }
             }
+            heldBackTypes.insert(type)
             return false
         }
         recentCorrections[type] = count
+        let generation = correctionGenerations[type, default: 0]
         _ = scheduler.schedule(after: correctionWindow) { [weak self] in
-            guard let self, let current = self.recentCorrections[type], current > 0 else { return }
+            guard let self, self.correctionGenerations[type, default: 0] == generation,
+                  let current = self.recentCorrections[type], current > 0 else { return }
             self.recentCorrections[type] = current - 1
         }
         return true
@@ -867,8 +948,25 @@ class AudioManager: ObservableObject {
     private func endHoldingBack(_ type: AudioDeviceType) {
         guard let pause = correctionPauses.removeValue(forKey: type) else { return }
         pause.cancel()
+        heldBackTypes.remove(type)
+        resetCorrectionWindow(type)
+        AudioLog.routing.notice("hold back \(type.rawValue, privacy: .public) ended by user action")
+    }
+
+    private func resetCorrectionWindow(_ type: AudioDeviceType) {
         recentCorrections[type] = 0
-        AudioLog.routing.notice("hold back \(type.rawValue, privacy: .public) ended by a manual pick")
+        correctionGenerations[type, default: 0] += 1
+    }
+
+    /// Retry only the sides held back after a routing conflict. A user pause and
+    /// pending manual selections remain in force.
+    func resumeRoutingAfterConflict() {
+        let types = heldBackTypes
+        for type in types { endHoldingBack(type) }
+        guard !isCustomMode, refreshDevices() else { return }
+        onFreshInventory {
+            for type in types { pickAgain(type) }
+        }
     }
 
     /// Runs `work` on the inventory just read, instead of reading it again for each route
@@ -903,7 +1001,7 @@ class AudioManager: ObservableObject {
         AudioLog.routing.notice("route done: \(device.type.rawValue, privacy: .public) = \(device.name, privacy: .public)")
         cancelRoute(device.type)
         if device.type == .input { currentInputId = device.id } else { currentOutputId = device.id }
-        if request.manual {
+        if request.manual && request.restoreOnlyFrom == nil {
             handPickedUIDs[device.type] = priorityManager.isNeverUse(device) ? device.uid : nil
             if request.promote {
                 if let category = request.category { switchMode(to: category) }
@@ -1030,7 +1128,8 @@ class AudioManager: ObservableObject {
                 finishFailure(request)
                 continue
             }
-            if device.id == (device.type == .input ? currentInputId : currentOutputId) {
+            if device.id == (device.type == .input ? currentInputId : currentOutputId),
+               !hasOutstandingWrite(device.type) {
                 completeRoute(request, device: device, changed: false)
             }
         }

@@ -307,14 +307,7 @@ struct DraggableDeviceRow: View {
     }
 
     private func calculateTarget(offset: CGFloat) -> Int? {
-        let rowsOffset = Int(round(offset / rowHeight))
-        var newTarget = index + rowsOffset
-        newTarget = max(0, min(deviceCount, newTarget))
-
-        if newTarget == index || newTarget == index + 1 {
-            return nil
-        }
-        return newTarget
+        DeviceRowDragTarget.insertionIndex(index: index, offset: offset, rowHeight: rowHeight, count: deviceCount)
     }
 
     var body: some View {
@@ -423,6 +416,7 @@ struct DraggableDeviceRow: View {
         .onTapGesture {
             select()
         }
+        .modifier(DeviceRowKeyboardActivation(enabled: !isDisconnected, action: select))
         .gesture(
             DragGesture(minimumDistance: 5)
                 .updating($gestureActive) { _, active, _ in active = true }
@@ -483,6 +477,93 @@ struct DraggableDeviceRow: View {
         }
 
     }
+}
+
+/// Convert the intended final row into the insertion index expected by DeviceMove.
+/// Downward moves must skip the source row; otherwise they require an extra row of travel.
+enum DeviceRowDragTarget {
+    static func insertionIndex(index: Int, offset: CGFloat, rowHeight: CGFloat, count: Int) -> Int? {
+        guard count > 0, (0..<count).contains(index), offset.isFinite, rowHeight > 0 else { return nil }
+        let rows = (offset / rowHeight).rounded()
+        let finalIndex = Int(max(0, min(CGFloat(count - 1), CGFloat(index) + rows)))
+        guard finalIndex != index else { return nil }
+        return finalIndex > index ? finalIndex + 1 : finalIndex
+    }
+}
+
+/// Keep the row's pointer/drag behavior while making it an ordinary keyboard focus target.
+private struct DeviceRowKeyboardActivation: ViewModifier {
+    let enabled: Bool
+    let action: () -> Void
+    @FocusState private var isFocused: Bool
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if #available(macOS 14.0, *) {
+            content
+                .focusable(enabled, interactions: .activate)
+                .focused($isFocused)
+                .onKeyPress(keys: [.space, .return], phases: .down) { press in
+                    guard enabled, isFocused, press.modifiers.intersection([.command, .control, .option]).isEmpty else {
+                        return .ignored
+                    }
+                    action()
+                    return .handled
+                }
+        } else {
+            content
+                .focusable(enabled)
+                .focused($isFocused)
+                .background(DeviceRowKeyMonitor(isFocused: enabled && isFocused, action: action))
+        }
+    }
+}
+
+/// macOS 13 has FocusState but no onKeyPress. Monitor only the focused row's own window,
+/// and pass every other event through unchanged. This never installs a global event tap.
+struct DeviceRowKeyMonitor: NSViewRepresentable {
+    let isFocused: Bool
+    let action: () -> Void
+
+    func makeNSView(context: Context) -> DeviceRowKeyMonitorView { DeviceRowKeyMonitorView() }
+    func updateNSView(_ view: DeviceRowKeyMonitorView, context: Context) {
+        view.action = action
+        view.isRowFocused = isFocused
+    }
+    static func dismantleNSView(_ view: DeviceRowKeyMonitorView, coordinator: ()) { view.stopMonitoring() }
+}
+
+final class DeviceRowKeyMonitorView: NSView {
+    var action: (() -> Void)?
+    var isRowFocused = false { didSet { updateMonitoring() } }
+    private var monitor: Any?
+
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+    override func viewDidMoveToWindow() { super.viewDidMoveToWindow(); updateMonitoring() }
+
+    private func updateMonitoring() {
+        guard isRowFocused, window != nil else { stopMonitoring(); return }
+        guard monitor == nil else { return }
+        monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard let self else { return event }
+            return self.handle(event)
+        }
+    }
+
+    func handle(_ event: NSEvent) -> NSEvent? {
+        guard isRowFocused, let window, event.window === window, event.type == .keyDown,
+              !event.isARepeat, [UInt16(36), 49, 76].contains(event.keyCode),
+              event.modifierFlags.intersection([.command, .control, .option]).isEmpty else { return event }
+        action?()
+        return nil
+    }
+
+    func stopMonitoring() {
+        if let monitor { NSEvent.removeMonitor(monitor) }
+        monitor = nil
+    }
+
+    deinit { if let monitor { NSEvent.removeMonitor(monitor) } }
 }
 
 /// One entry of a row's context menu

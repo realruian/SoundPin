@@ -140,18 +140,79 @@ final class SimulatedListeningModes: ListeningModeProviding {
     }
 }
 
-/// Holds writes until `flush`, like a write still blocked in the system.
+/// Holds writes until `flush`. A service's `beforeWrite` hook runs after the token
+/// starts, allowing checks to issue new intent while the old HAL call is in progress.
 @MainActor final class DeferredAudioWriter: AudioWriting {
     private var queued: [(() -> AudioObjectID?, @MainActor (AudioObjectID?) -> Void)] = []
     var pendingCount: Int { queued.count }
     func write(_ work: @escaping () -> AudioObjectID?, then done: @escaping @MainActor (AudioObjectID?) -> Void) {
         queued.append((work, done))
     }
-    /// Writes in order, as the serial queue does, then reports each in order
+    /// Writes in order, then reports each in order. Work enqueued by a started-write
+    /// hook is left for the next flush, after the current HAL write returns.
     func flush() {
         let jobs = queued
         queued = []
         let results = jobs.map { $0.0() }
         for (job, result) in zip(jobs, results) { job.1(result) }
     }
+}
+
+/// A thread-safe fake HAL boundary for exercising the production background writer.
+/// The first matching write blocks after entering HAL, while the main actor can
+/// receive a pause or newer selection. It never uses real audio or preferences.
+final class BlockingRouteService: AudioDeviceProviding, @unchecked Sendable {
+    var onDevicesChanged: (() -> Void)?
+    var onMuteOrVolumeChanged: (() -> Void)?
+    private let lock = NSLock()
+    private let release = DispatchSemaphore(value: 0)
+    private let devices: [AudioDevice]
+    private let blockedUID: String
+    private var current: AudioObjectID
+    private var entered = false
+    private var recordedWrites: [String] = []
+
+    init(devices: [AudioDevice], current: AudioObjectID, blockedUID: String) {
+        self.devices = devices
+        self.current = current
+        self.blockedUID = blockedUID
+    }
+
+    private func locked<T>(_ work: () -> T) -> T {
+        lock.lock()
+        defer { lock.unlock() }
+        return work()
+    }
+
+    var writeHasStarted: Bool { locked { entered } }
+    var writes: [String] { locked { recordedWrites } }
+    func releaseWrite() { release.signal() }
+
+    func readInventory() -> DeviceInventory { .available(devices) }
+    func getCurrentDefaultDevice(type: AudioDeviceType) -> AudioObjectID? {
+        type == .output ? locked { current } : 0
+    }
+    func setDefaultDevice(_ device: AudioDevice) -> Bool {
+        let shouldBlock = locked {
+            guard device.uid == blockedUID, !entered else { return false }
+            entered = true
+            return true
+        }
+        if shouldBlock, release.wait(timeout: .now() + 5) != .success { return false }
+        return locked {
+            guard device.type == .output, devices.contains(where: { $0.rowID == device.rowID && $0.id == device.id }) else {
+                return false
+            }
+            recordedWrites.append(device.uid)
+            current = device.id
+            return true
+        }
+    }
+    func readOutputVolume() -> OutputVolumeState? {
+        OutputVolumeState(deviceID: locked { current }, volume: 0.6, isSettable: true)
+    }
+    func setOutputVolume(_ volume: Float, for device: AudioDevice) -> Bool { false }
+    func unmuteOutput(for device: AudioDevice) -> Bool { false }
+    func isDeviceMuted(_ deviceId: AudioObjectID, type: AudioDeviceType) -> Bool { false }
+    func startListening() {}
 }
